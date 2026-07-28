@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Growing Bouncing Ball</title>
+<title>Each Ball Has Only 4 Seconds To Escape</title>
 <style>
   html, body {
     margin: 0;
@@ -29,10 +29,10 @@
     margin-top: 4%;
     color: #fff;
     font-weight: 900;
-    font-size: clamp(18px, 4vw, 28px);
+    font-size: clamp(20px, 4.2vw, 30px);
     text-align: center;
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
-    width: 92%;
+    width: 90%;
     line-height: 1.15;
   }
   #canvas-wrap {
@@ -40,6 +40,38 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  #countdown {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.5);
+    font-weight: 900;
+    font-size: clamp(60px, 15vw, 120px);
+    text-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+  #sound-hint {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.7);
+    font-size: 13px;
+    background: rgba(0,0,0,0.5);
+    padding: 4px 10px;
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  #status {
+    position: relative;
+    margin-top: 4%;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    opacity: 0.85;
   }
   #restart {
     position: relative;
@@ -54,46 +86,38 @@
     cursor: pointer;
   }
   #restart:hover { background: #12a0be; }
-  #start-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #7a0d0d;
-    font-weight: 900;
-    font-size: clamp(24px, 6vw, 40px);
-    text-align: center;
-    cursor: pointer;
-    background: rgba(255,255,255,0.85);
-    padding: 14px 24px;
-    border-radius: 16px;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="title">Everytime the ball bounces it gets bigger until<br>my PC crashes</div>
+  <div id="title">Each ball has only 4 seconds to escape</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
-    <div id="start-overlay">Tap to start</div>
+    <div id="countdown">4</div>
+    <div id="sound-hint">🔈 Einmal tippen für Sound</div>
   </div>
+  <div id="status"></div>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const countdownEl = document.getElementById('countdown');
 
 function size() {
-  const reserved = 160;
+  const reserved = 220;
   const s = Math.min(window.innerWidth * 0.92, window.innerHeight - reserved);
   canvas.width = s;
   canvas.height = s;
 }
 size();
+window.addEventListener('resize', () => {
+  size();
+  circle.r = canvas.width / 2 - 12;
+  circle.cx = canvas.width / 2;
+  circle.cy = canvas.height / 2;
+});
 
 const circle = {
   cx: canvas.width / 2,
@@ -101,19 +125,19 @@ const circle = {
   r: canvas.width / 2 - 12
 };
 
-const START_RADIUS = 8;
-const START_SPEED = 3.2;
-const RADIUS_GROWTH = 1.045;
-const SPEED_GROWTH = 1.03;
-const MAX_RADIUS = circle.r;
-const MAX_SPEED = START_SPEED * 6;
-const HUE_SPEED = 2.2;
-const STROKE_WIDTH = 3;
-const GRAVITY = 0.18;
+const BALL_RADIUS = 10;
+const GRAVITY = 0.15;
+const INITIAL_SPEED = 3;
+const TIMER_MS = 4000;
+const GAP_CENTER_ANGLE = Math.PI / 2; // unten (Startposition)
+const GAP_HALF_ANGLE = 0.28; // ~16° auf jeder Seite -> ~32° Gesamtlücke
+const ROTATION_SPEED = 0.012; // Radiant pro Frame
 
-let ball = null;
-let clipped = false;
-let started = false;
+let ringRotation = 0;
+let frozenBalls = [];
+let active = null;
+let escapedCount = 0;
+let frozenCount = 0;
 
 // --- Sound Engine (Web Audio API) ---
 let audioCtx = null;
@@ -126,29 +150,28 @@ function ensureAudio() {
     audioCtx.resume();
   }
 }
-// Sofort beim Laden versuchen (klappt in manchen Browsern direkt)
-ensureAudio();
-// Stiller Fallback: erste Interaktion schaltet Audio frei, falls der Browser
-// das Autoplay zunächst blockiert hat (keine sichtbare Aufforderung mehr)
 document.addEventListener('click', ensureAudio);
 document.addEventListener('touchstart', ensureAudio);
-document.addEventListener('keydown', ensureAudio);
-document.addEventListener('scroll', ensureAudio);
+document.addEventListener('click', hideSoundHint, { once: true });
+document.addEventListener('touchstart', hideSoundHint, { once: true });
 
-function playBounceSound(radius) {
+function hideSoundHint() {
+  const hint = document.getElementById('sound-hint');
+  if (hint) hint.style.display = 'none';
+}
+
+function playCollisionSound() {
   if (!audioCtx) return;
-  // Tieferer Ton je größer der Ball
-  const freq = Math.max(120, 700 - radius * 8);
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.09);
+  osc.frequency.setValueAtTime(550 + Math.random() * 250, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.07);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.09);
+  osc.stop(audioCtx.currentTime + 0.07);
 }
 // --- Ende Sound Engine ---
 
@@ -156,103 +179,159 @@ function dist(x1, y1, x2, y2) {
   return Math.hypot(x1 - x2, y1 - y2);
 }
 
-function drawBackground() {
-  // Weißer Kreis mit dunkelrotem Rand als Basis
-  ctx.beginPath();
-  ctx.arc(circle.cx, circle.cy, circle.r, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#7a0d0d';
-  ctx.stroke();
+function angleOf(x, y) {
+  return Math.atan2(y - circle.cy, x - circle.cx);
 }
 
-function applyClip() {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(circle.cx, circle.cy, circle.r, 0, Math.PI * 2);
-  ctx.clip();
-  clipped = true;
+function isInGap(angle) {
+  const gapAngle = GAP_CENTER_ANGLE + ringRotation;
+  const diff = Math.atan2(Math.sin(angle - gapAngle), Math.cos(angle - gapAngle));
+  return Math.abs(diff) < GAP_HALF_ANGLE;
 }
 
-function initBall() {
+function spawnNext() {
+  const angle = Math.random() * Math.PI * 2;
+  const startDist = Math.random() * (circle.r * 0.25);
+  const x = circle.cx + Math.cos(angle) * startDist;
+  const y = circle.cy + Math.sin(angle) * startDist;
   const dir = Math.random() * Math.PI * 2;
-  ball = {
-    x: circle.cx,
-    y: circle.cy,
-    vx: Math.cos(dir) * START_SPEED,
-    vy: Math.sin(dir) * START_SPEED,
-    r: START_RADIUS,
-    hue: Math.random() * 360
+  const hue = Math.floor(Math.random() * 360);
+
+  active = {
+    x, y,
+    vx: Math.cos(dir) * INITIAL_SPEED,
+    vy: Math.sin(dir) * INITIAL_SPEED,
+    r: BALL_RADIUS,
+    color: `hsl(${hue}, 85%, 58%)`,
+    spawnTime: Date.now(),
+    escaping: false
   };
 }
 
 function init() {
-  if (clipped) {
-    ctx.restore();
-    clipped = false;
-  }
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawBackground();
-  applyClip();
-  initBall();
-  started = false;
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'flex';
+  frozenBalls = [];
+  active = null;
+  escapedCount = 0;
+  frozenCount = 0;
+  ringRotation = 0;
+  spawnNext();
 }
 init();
 
-function startGame() {
-  if (started) return;
-  ensureAudio();
-  started = true;
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'none';
-}
-document.getElementById('start-overlay').addEventListener('click', startGame);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'k' || e.key === 'K') startGame();
-});
-
 function update() {
-  if (!started) return;
+  ringRotation += ROTATION_SPEED;
 
-  ball.vy += GRAVITY;
-  ball.x += ball.vx;
-  ball.y += ball.vy;
+  if (!active) return;
 
-  const d = dist(ball.x, ball.y, circle.cx, circle.cy);
-  if (d + ball.r > circle.r) {
-    const nx = (ball.x - circle.cx) / d;
-    const ny = (ball.y - circle.cy) / d;
-    const dot = ball.vx * nx + ball.vy * ny;
-    ball.vx -= 2 * dot * nx;
-    ball.vy -= 2 * dot * ny;
-    const overlap = d + ball.r - circle.r;
-    ball.x -= nx * overlap;
-    ball.y -= ny * overlap;
-    playBounceSound(ball.r);
+  active.vy += GRAVITY;
+  active.x += active.vx;
+  active.y += active.vy;
 
-    // Größer und schneller bei jedem Aufprall (mit Obergrenze)
-    if (ball.r < MAX_RADIUS) ball.r *= RADIUS_GROWTH;
-    const speed = Math.hypot(ball.vx, ball.vy);
-    if (speed < MAX_SPEED) {
-      ball.vx *= SPEED_GROWTH;
-      ball.vy *= SPEED_GROWTH;
+  const d = dist(active.x, active.y, circle.cx, circle.cy);
+  const angle = angleOf(active.x, active.y);
+
+  if (d + active.r > circle.r) {
+    if (active.escaping || isInGap(angle)) {
+      // durch die Lücke -> keine Reflektion, prüfen ob komplett entkommen
+      active.escaping = true;
+      if (d - active.r > circle.r + 4) {
+        escapedCount++;
+        active = null;
+        spawnNext();
+        updateStatus();
+        return;
+      }
+    } else {
+      // normale Wandreflektion
+      const nx = (active.x - circle.cx) / d;
+      const ny = (active.y - circle.cy) / d;
+      const dot = active.vx * nx + active.vy * ny;
+      active.vx -= 2 * dot * nx;
+      active.vy -= 2 * dot * ny;
+      const overlap = d + active.r - circle.r;
+      active.x -= nx * overlap;
+      active.y -= ny * overlap;
+      playCollisionSound();
     }
   }
 
-  ball.hue = (ball.hue + HUE_SPEED) % 360;
+  // Kollision mit eingefrorenen Bällen
+  for (const f of frozenBalls) {
+    const dd = dist(active.x, active.y, f.x, f.y);
+    if (dd < active.r + f.r && dd > 0) {
+      const nx = (active.x - f.x) / dd;
+      const ny = (active.y - f.y) / dd;
+      const dot = active.vx * nx + active.vy * ny;
+      if (dot < 0) {
+        active.vx -= 2 * dot * nx;
+        active.vy -= 2 * dot * ny;
+        const overlap = active.r + f.r - dd;
+        active.x += nx * overlap;
+        active.y += ny * overlap;
+        playCollisionSound();
+      }
+    }
+  }
+
+  // Timer-Check
+  const elapsed = Date.now() - active.spawnTime;
+  if (elapsed >= TIMER_MS) {
+    frozenBalls.push({ x: active.x, y: active.y, r: active.r, color: active.color });
+    frozenCount++;
+    active = null;
+    spawnNext();
+    updateStatus();
+  }
+}
+
+function updateStatus() {
+  statusEl.textContent = `Escaped: ${escapedCount}   |   Frozen: ${frozenCount}`;
+}
+updateStatus();
+
+function drawRing() {
+  const segments = 240;
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    const mid = (a0 + a1) / 2;
+    if (isInGap(mid)) continue;
+    const hue = (mid / (Math.PI * 2)) * 360;
+    ctx.beginPath();
+    ctx.arc(circle.cx, circle.cy, circle.r, a0, a1);
+    ctx.strokeStyle = `hsl(${hue}, 85%, 55%)`;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+  }
 }
 
 function draw() {
-  if (!started) return;
-  // Kein clearRect -> Spur akkumuliert sich dauerhaft
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-  ctx.lineWidth = STROKE_WIDTH;
-  ctx.strokeStyle = `hsl(${ball.hue}, 90%, 55%)`;
-  ctx.stroke();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawRing();
+
+  // Eingefrorene Bälle
+  for (const f of frozenBalls) {
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    ctx.fillStyle = f.color;
+    ctx.fill();
+  }
+
+  // Aktiver Ball
+  if (active) {
+    ctx.beginPath();
+    ctx.arc(active.x, active.y, active.r, 0, Math.PI * 2);
+    ctx.fillStyle = active.color;
+    ctx.shadowColor = active.color;
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    const remaining = Math.max(0, TIMER_MS - (Date.now() - active.spawnTime));
+    const secs = Math.max(1, Math.ceil(remaining / 1000));
+    countdownEl.textContent = secs;
+  }
 }
 
 function loop() {
