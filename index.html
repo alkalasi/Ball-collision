@@ -63,6 +63,25 @@
     cursor: pointer;
   }
   #restart:hover { background: #12a0be; }
+  #start-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-weight: 900;
+    font-size: clamp(20px, 5vw, 32px);
+    text-align: center;
+    background: rgba(0,0,0,0.75);
+    padding: 16px 26px;
+    border-radius: 16px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.3;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -70,6 +89,7 @@
   <div id="title">+2 after the ball escapes<br>until its chaos</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
+    <div id="start-overlay">Press K<br>to start</div>
   </div>
   <div id="status"></div>
 </div>
@@ -122,6 +142,7 @@ function ensureAudio() {
     audioCtx.resume();
   }
 }
+ensureAudio();
 document.addEventListener('click', ensureAudio);
 document.addEventListener('touchstart', ensureAudio);
 document.addEventListener('keydown', ensureAudio);
@@ -130,14 +151,29 @@ function playWallSound() {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(500 + Math.random() * 250, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.06);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(450 + Math.random() * 250, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.09);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.06);
+  osc.stop(audioCtx.currentTime + 0.09);
+}
+
+function playEscapeSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(950, audioCtx.currentTime + 0.18);
+  gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.22);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.22);
 }
 // --- Ende Sound Engine ---
 
@@ -161,22 +197,40 @@ function spawnBall(x, y) {
   };
 }
 
+let started = false;
+
 function init() {
   balls = [];
   escapedCount = 0;
   gapX = box.left + GAP_WIDTH / 2;
   gapDir = 1;
+  started = false;
   balls.push(spawnBall(box.left + (box.right - box.left) * 0.45, box.top + 60));
   balls.push(spawnBall(box.left + (box.right - box.left) * 0.55, box.top + 60));
   updateStatus();
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'flex';
 }
 init();
+
+function startGame() {
+  if (started) return;
+  ensureAudio();
+  started = true;
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+document.getElementById('start-overlay').addEventListener('click', startGame);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'k' || e.key === 'K') startGame();
+});
 
 function updateStatus() {
   statusEl.textContent = `Balls: ${balls.length}   |   Escaped: ${escapedCount}`;
 }
 
 function update() {
+  if (!started) return;
   // Lücke bewegt sich hin und her
   gapX += GAP_SPEED * gapDir;
   const minGapX = box.left + GAP_WIDTH / 2;
@@ -222,6 +276,7 @@ function update() {
         if (b.y - b.r > box.bottom + 10) {
           // entkommen -> mehr Bälle spawnen, sobald 250 erreicht wurden
           escapedCount++;
+          playEscapeSound();
           const spawnCount = balls.length >= SCALE_THRESHOLD ? 4 : 2;
           for (let k = 0; k < spawnCount; k++) {
             if (balls.length + newBalls.length < MAX_BALLS) {
