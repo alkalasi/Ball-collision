@@ -138,8 +138,19 @@ function ensureAudio() {
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) { /* Audio nicht verfügbar */ }
-  } else if (audioCtx.state === 'suspended') {
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
+  }
+  // Stiller Mini-Ton, um den Audio-Kontext auf iOS Safari zuverlässig zu entsperren
+  if (audioCtx) {
+    const unlockOsc = audioCtx.createOscillator();
+    const unlockGain = audioCtx.createGain();
+    unlockGain.gain.value = 0;
+    unlockOsc.connect(unlockGain);
+    unlockGain.connect(audioCtx.destination);
+    unlockOsc.start();
+    unlockOsc.stop(audioCtx.currentTime + 0.01);
   }
 }
 ensureAudio();
