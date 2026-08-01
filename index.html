@@ -138,8 +138,8 @@ const boxCy = (box.top + box.bottom) / 2;
 const START_HEALTH = 1000000000000; // 1 Billion
 const START_TIME = 60;
 const BIG_RADIUS = (box.right - box.left) * 0.32;
-const BALL_RADIUS = 20;
-const BALL_SPEED = 7.5 * 0.9 * 0.75;
+const BALL_RADIUS = 26;
+const BALL_SPEED = 7.5 * 0.9 * 0.75 * 1.25;
 const BIG_CIRCLE_SPEED = 0.6; // sehr langsame Eigenbewegung
 
 let health = START_HEALTH;
@@ -153,6 +153,58 @@ let started = false;
 let startTime = 0;
 let touchingBig = false;
 let destroyed = false;
+
+// --- Sound Engine (Web Audio API) ---
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) { /* Audio nicht verfügbar */ }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  if (audioCtx) {
+    const unlockOsc = audioCtx.createOscillator();
+    const unlockGain = audioCtx.createGain();
+    unlockGain.gain.value = 0;
+    unlockOsc.connect(unlockGain);
+    unlockGain.connect(audioCtx.destination);
+    unlockOsc.start();
+    unlockOsc.stop(audioCtx.currentTime + 0.01);
+  }
+}
+
+function playWallSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(500 + Math.random() * 150, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.06);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.06);
+}
+
+function playHitSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(90, audioCtx.currentTime + 0.12);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.15);
+}
+// --- Ende Sound Engine ---
 
 function dist(x1, y1, x2, y2) {
   return Math.hypot(x1 - x2, y1 - y2);
@@ -240,6 +292,7 @@ init();
 
 function startGame() {
   if (started) return;
+  ensureAudio();
   started = true;
   startTime = Date.now();
   const overlay = document.getElementById('start-overlay');
@@ -276,16 +329,20 @@ function update() {
   if (ball.x - ball.r < box.left) {
     ball.x = box.left + ball.r;
     ball.vx *= -1;
+    playWallSound();
   } else if (ball.x + ball.r > box.right) {
     ball.x = box.right - ball.r;
     ball.vx *= -1;
+    playWallSound();
   }
   if (ball.y - ball.r < box.top) {
     ball.y = box.top + ball.r;
     ball.vy *= -1;
+    playWallSound();
   } else if (ball.y + ball.r > box.bottom) {
     ball.y = box.bottom - ball.r;
     ball.vy *= -1;
+    playWallSound();
   }
 
   if (destroyed) return;
@@ -316,6 +373,7 @@ function update() {
       currentDamage = dmg;
       health = Math.max(0, health - dmg);
       damageEl.textContent = `DAMAGE: ${currentDamage}`;
+      playHitSound();
       damagePopups.push({
         x: ball.x,
         y: ball.y,
