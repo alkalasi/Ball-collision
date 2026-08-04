@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Which Ball Will Survive?</title>
+<title>Will The Bouncing Ball Escape?</title>
 <style>
   html, body {
     margin: 0;
@@ -24,42 +24,35 @@
   canvas {
     display: block;
   }
+  #title {
+    position: relative;
+    margin-top: 4%;
+    color: #fff;
+    font-weight: 800;
+    font-size: clamp(20px, 4.5vw, 30px);
+    text-align: center;
+    width: 90%;
+    line-height: 1.2;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  }
+  #title .accent {
+    color: #4caf1e;
+  }
   #canvas-wrap {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  #countdown {
+  #count {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     color: #fff;
     font-weight: 900;
-    font-size: clamp(60px, 15vw, 120px);
-    text-shadow: 0 4px 12px rgba(0,0,0,0.7);
+    font-size: clamp(14px, 3vw, 22px);
     pointer-events: none;
-  }
-  #title {
-    position: relative;
-    margin-top: 4%;
-    color: #fff;
-    font-weight: 900;
-    font-size: clamp(20px, 4.5vw, 32px);
-    text-align: center;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
-    width: 90%;
-    line-height: 1.15;
-  }
-  #status {
-    position: relative;
-    margin-top: 4%;
-    color: #fff;
-    font-size: 18px;
-    font-weight: 700;
-    text-align: center;
-    opacity: 0.9;
   }
   #restart {
     position: relative;
@@ -74,400 +67,320 @@
     cursor: pointer;
   }
   #restart:hover { background: #12a0be; }
+  #start-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-weight: 900;
+    font-size: clamp(20px, 5vw, 32px);
+    text-align: center;
+    background: rgba(0,0,0,0.75);
+    padding: 16px 26px;
+    border-radius: 16px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.3;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="title">Choose a color</div>
+  <div id="title">Will the bouncing ball <span class="accent">ESCAPE?</span></div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
-    <div id="countdown"></div>
+    <div id="count">400</div>
+    <div id="start-overlay">Press K<br>to start</div>
   </div>
-  <div id="status"></div>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
-const titleEl = document.getElementById('title');
-const countdownEl = document.getElementById('countdown');
+const countEl = document.getElementById('count');
 
 function size() {
-  const reserved = 220; // Platz für Titel, Status und Button
+  const reserved = 160;
   const s = Math.min(window.innerWidth * 0.92, window.innerHeight - reserved);
   canvas.width = s;
   canvas.height = s;
 }
 size();
-window.addEventListener('resize', () => {
-  size();
-  circle.r = canvas.width / 2 - 10;
-  circle.cx = canvas.width / 2;
-  circle.cy = canvas.height / 2;
-});
 
-const circle = {
-  cx: canvas.width / 2,
-  cy: canvas.height / 2,
-  r: canvas.width / 2 - 10
-};
+const cx = canvas.width / 2;
+const cy = canvas.height / 2;
 
-const BALL_RADIUS = 12;
-const SPEED = 4.5;
-const NUM_BALLS = 8;
-const LINES_PER_BALL = 13;
-const TOTAL_LINES = NUM_BALLS * LINES_PER_BALL; // 136
-const CAPTURE_MARGIN = 1.5;
+const N = 50;
+const VISIBLE_COUNT = 15;
+const R_MIN = 40;
+const R_MAX = canvas.width / 2 - 8;
+const GAP_HALF_ANGLE = 0.3; // ~17° pro Seite -> ~34° Gesamtlücke
+const INNER_SPEED = 0.015; // Geschwindigkeit des innersten Rings
+const SPEED_STEP = 0.0006; // sehr geringer Zuwachs pro weiterem Ring nach außen
+const BALL_RADIUS = 10;
+const BALL_SPEED = 3.4;
 
-let balls = [];
-let lines = [];
-let finished = false;
-
-// --- Sound Engine (Web Audio API, keine externen Dateien nötig) ---
+// --- Sound Engine (Web Audio API) ---
 let audioCtx = null;
 function ensureAudio() {
   if (!audioCtx) {
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) { /* Audio nicht verfügbar */ }
-  } else if (audioCtx.state === 'suspended') {
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
+  if (audioCtx) {
+    // Stiller Mini-Ton zum zuverlässigen Entsperren (v.a. iOS Safari)
+    const unlockOsc = audioCtx.createOscillator();
+    const unlockGain = audioCtx.createGain();
+    unlockGain.gain.value = 0;
+    unlockOsc.connect(unlockGain);
+    unlockGain.connect(audioCtx.destination);
+    unlockOsc.start();
+    unlockOsc.stop(audioCtx.currentTime + 0.01);
+  }
 }
-document.addEventListener('click', ensureAudio);
-document.addEventListener('touchstart', ensureAudio);
 
-function playTone(freq, duration, type, volume) {
+function playWallSound() {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-  gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(450 + Math.random() * 250, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + duration);
+  osc.stop(audioCtx.currentTime + 0.08);
 }
 
-function playCollisionSound() {
-  playTone(550 + Math.random() * 250, 0.07, 'sine', 0.1);
-}
-
-function playDeathSound() {
+function playEscapeSound() {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(480, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + 0.4);
-  gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+  osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.16);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-function playVictorySound() {
-  playTone(500, 0.15, 'triangle', 0.15);
-  setTimeout(() => playTone(750, 0.25, 'triangle', 0.15), 120);
+  osc.stop(audioCtx.currentTime + 0.2);
 }
 // --- Ende Sound Engine ---
-let phase = 'countdown'; // 'countdown' | 'running' | 'finished'
-let countdownTimer = null;
-let gameStartTime = null;
-const TOTAL_TIME_LIMIT = 70000; // 70 Sekunden Gesamtlimit
-const SPEED_BOOST_THRESHOLD = 3;
-const SPEED_BOOST_FACTOR = 1.06;
-const MAX_SPEED = SPEED * 5;
-let winnerColor = null;
-let winnerHue = null;
+const GRAVITY = 0.14;
 
-function capSpeed(b) {
-  const s = Math.hypot(b.vx, b.vy);
-  if (s > MAX_SPEED) {
-    b.vx = (b.vx / s) * MAX_SPEED;
-    b.vy = (b.vy / s) * MAX_SPEED;
-  }
+// Feste Radien der 10 sichtbaren "Slots", von innen nach außen
+const slotRadius = [];
+for (let k = 0; k < VISIBLE_COUNT; k++) {
+  slotRadius.push(R_MIN + k * (R_MAX - R_MIN) / (VISIBLE_COUNT - 1));
 }
 
-function hueToName(h) {
-  h = ((h % 360) + 360) % 360;
-  if (h < 15 || h >= 345) return 'Red';
-  if (h < 45) return 'Orange';
-  if (h < 70) return 'Yellow';
-  if (h < 170) return 'Green';
-  if (h < 200) return 'Cyan';
-  if (h < 260) return 'Blue';
-  if (h < 290) return 'Purple';
-  return 'Pink';
-}
-
-function declareWinner(winner) {
-  finished = true;
-  for (const b of balls) {
-    if (b !== winner) b.alive = false;
-  }
-  winnerColor = winner.color;
-  winnerHue = winner.hue;
-  statusEl.style.color = '#fff';
-  statusEl.textContent = `Winner: ${hueToName(winner.hue)}`;
-  playVictorySound();
-}
+let window_ = []; // die aktuell sichtbaren Ringe (Index 0 = innerster/aktiver Ring)
+let globalDir = 1;
+let remaining = N;
+let ball = null;
+let particles = [];
 
 function dist(x1, y1, x2, y2) {
   return Math.hypot(x1 - x2, y1 - y2);
 }
 
-function pointToSegmentDist(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return dist(px, py, x1, y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return dist(px, py, x1 + t * dx, y1 + t * dy);
+function angleOf(x, y) {
+  return Math.atan2(y - cy, x - cx);
 }
 
-function randColorFromHue(h) {
-  return `hsl(${h}, 85%, 58%)`;
+function isInGap(angle, gapCenter) {
+  const diff = Math.atan2(Math.sin(angle - gapCenter), Math.cos(angle - gapCenter));
+  return Math.abs(diff) < GAP_HALF_ANGLE;
 }
 
-function startCountdown() {
-  if (countdownTimer) clearInterval(countdownTimer);
-  phase = 'countdown';
-  titleEl.textContent = 'Choose a color';
-  let value = 3;
-  countdownEl.textContent = value;
-  countdownEl.style.display = 'block';
-
-  countdownTimer = setInterval(() => {
-    value--;
-    if (value <= 0) {
-      clearInterval(countdownTimer);
-      countdownEl.style.display = 'none';
-      titleEl.textContent = 'Which BALL will manage to survive?';
-      phase = 'running';
-      gameStartTime = Date.now();
-    } else {
-      countdownEl.textContent = value;
+function makeRing(slotIndex, fixedGapBase) {
+  return {
+    radius: slotRadius[slotIndex],
+    gapBase: fixedGapBase !== undefined ? fixedGapBase : Math.random() * Math.PI * 2,
+    rotation: 0,
+    randomFactor: 0.85 + Math.random() * 0.3,
+    hue: Math.floor(Math.random() * 360),
+    speedFor(idx) {
+      return (INNER_SPEED + idx * SPEED_STEP) * this.randomFactor;
     }
-  }, 1000);
+  };
 }
+
+function buildWindow() {
+  window_ = [];
+  const startGapAngle = -Math.PI / 2; // alle Lücken starten auf derselben Seite
+  for (let k = 0; k < VISIBLE_COUNT; k++) {
+    window_.push(makeRing(k, startGapAngle));
+  }
+}
+
+let started = false;
 
 function init() {
-  balls = [];
-  lines = [];
-  finished = false;
-  gameStartTime = null;
-  winnerColor = null;
-  winnerHue = null;
-  statusEl.textContent = '';
+  buildWindow();
+  globalDir = 1;
+  remaining = N;
+  particles = [];
+  started = false;
+  countEl.textContent = remaining;
 
-  // 8 Bälle gleichmäßig verteilt an der Wand
-  for (let i = 0; i < NUM_BALLS; i++) {
-    const angle = (i / NUM_BALLS) * Math.PI * 2;
-    const x = circle.cx + Math.cos(angle) * (circle.r - BALL_RADIUS);
-    const y = circle.cy + Math.sin(angle) * (circle.r - BALL_RADIUS);
+  const dir = Math.random() * Math.PI * 2;
+  ball = {
+    x: cx,
+    y: cy,
+    vx: Math.cos(dir) * BALL_SPEED,
+    vy: Math.sin(dir) * BALL_SPEED,
+    r: BALL_RADIUS,
+    escaping: false
+  };
 
-    // Richtung: nach innen mit leichtem zufälligem Winkel-Offset
-    const inward = angle + Math.PI + (Math.random() - 0.5) * 0.9;
-    const hue = Math.floor((360 / NUM_BALLS) * i + Math.random() * 20);
-
-    balls.push({
-      id: i,
-      x, y,
-      vx: Math.cos(inward) * SPEED,
-      vy: Math.sin(inward) * SPEED,
-      r: BALL_RADIUS,
-      hue,
-      color: randColorFromHue(hue),
-      alive: true
-    });
-  }
-
-  // 136 Ankerpunkte gleichmäßig am Rand, je 17 einem Ball zugeordnet (dessen eigener Sektor)
-  for (let i = 0; i < NUM_BALLS; i++) {
-    for (let j = 0; j < LINES_PER_BALL; j++) {
-      const k = i * LINES_PER_BALL + j;
-      const angle = (k / TOTAL_LINES) * Math.PI * 2;
-      lines.push({
-        ax: circle.cx + Math.cos(angle) * circle.r,
-        ay: circle.cy + Math.sin(angle) * circle.r,
-        owner: i
-      });
-    }
-  }
-
-  startCountdown();
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'flex';
 }
 init();
 
+function startGame() {
+  if (started) return;
+  ensureAudio();
+  started = true;
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+document.getElementById('start-overlay').addEventListener('click', startGame);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'k' || e.key === 'K') startGame();
+});
+
+function spawnDisintegration(ring) {
+  const segments = 40;
+  const gapAngle = ring.gapBase + ring.rotation;
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const diff = Math.atan2(Math.sin(a - gapAngle), Math.cos(a - gapAngle));
+    if (Math.abs(diff) < GAP_HALF_ANGLE) continue; // Lücke selbst nicht zerfallen lassen
+
+    const px = cx + Math.cos(a) * ring.radius;
+    const py = cy + Math.sin(a) * ring.radius;
+    const speed = 0.6 + Math.random() * 1.8;
+    particles.push({
+      x: px,
+      y: py,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: 28 + Math.random() * 12,
+      maxLife: 40
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.96;
+    p.vy *= 0.96;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fill();
+  }
+}
+
 function update() {
-  if (finished || phase !== 'running') return;
-
-  const alive = balls.filter(b => b.alive);
-  const boostActive = alive.length <= SPEED_BOOST_THRESHOLD && alive.length > 1;
-
-  for (const b of alive) {
-    b.x += b.vx;
-    b.y += b.vy;
-
-    // Wandkollision (keine Gravitation, rein elastisch)
-    const d = dist(b.x, b.y, circle.cx, circle.cy);
-    if (d + b.r > circle.r) {
-      const nx = (b.x - circle.cx) / d;
-      const ny = (b.y - circle.cy) / d;
-      const dot = b.vx * nx + b.vy * ny;
-      b.vx -= 2 * dot * nx;
-      b.vy -= 2 * dot * ny;
-      const overlap = d + b.r - circle.r;
-      b.x -= nx * overlap;
-      b.y -= ny * overlap;
-      playCollisionSound();
-
-      if (boostActive) {
-        b.vx *= SPEED_BOOST_FACTOR;
-        b.vy *= SPEED_BOOST_FACTOR;
-        capSpeed(b);
-      }
-    }
+  if (!started) return;
+  // Alle sichtbaren Ringe rotieren, je weiter außen (Slot-Index) desto schneller
+  for (let i = 0; i < window_.length; i++) {
+    window_[i].rotation += window_[i].speedFor(i) * globalDir;
   }
 
-  // Ball-Ball-Kollision (elastisch)
-  for (let i = 0; i < alive.length; i++) {
-    for (let j = i + 1; j < alive.length; j++) {
-      const a = alive[i], bb = alive[j];
-      const d = dist(a.x, a.y, bb.x, bb.y);
-      if (d < a.r + bb.r && d > 0) {
-        const nx = (bb.x - a.x) / d;
-        const ny = (bb.y - a.y) / d;
-        const dvx = bb.vx - a.vx;
-        const dvy = bb.vy - a.vy;
-        const rel = dvx * nx + dvy * ny;
-        if (rel < 0) {
-          a.vx += rel * nx;
-          a.vy += rel * ny;
-          bb.vx -= rel * nx;
-          bb.vy -= rel * ny;
-          const overlap = (a.r + bb.r - d) / 2;
-          a.x -= nx * overlap;
-          a.y -= ny * overlap;
-          bb.x += nx * overlap;
-          bb.y += ny * overlap;
-          playCollisionSound();
+  ball.vy += GRAVITY;
+  ball.x += ball.vx;
+  ball.y += ball.vy;
 
-          if (boostActive) {
-            a.vx *= SPEED_BOOST_FACTOR;
-            a.vy *= SPEED_BOOST_FACTOR;
-            bb.vx *= SPEED_BOOST_FACTOR;
-            bb.vy *= SPEED_BOOST_FACTOR;
-            capSpeed(a);
-            capSpeed(bb);
-          }
+  updateParticles();
+
+  if (window_.length === 0) return; // alles geschafft
+
+  const activeRing = window_[0];
+  const d = dist(ball.x, ball.y, cx, cy);
+  const angle = angleOf(ball.x, ball.y);
+  const gapAngle = activeRing.gapBase + activeRing.rotation;
+
+  if (d + ball.r > activeRing.radius) {
+    if (ball.escaping || isInGap(angle, gapAngle)) {
+      ball.escaping = true;
+      if (d - ball.r > activeRing.radius + 4) {
+        // innersten Ring durchbrechen -> zerfallen lassen statt einfach zu entfernen
+        spawnDisintegration(activeRing);
+        playEscapeSound();
+        window_.shift();
+        for (let i = 0; i < window_.length; i++) {
+          window_[i].radius = slotRadius[i];
         }
+        if (remaining > VISIBLE_COUNT) {
+          window_.push(makeRing(VISIBLE_COUNT - 1));
+        }
+        remaining--;
+        countEl.textContent = remaining;
+        globalDir *= -1;
+        ball.escaping = false;
       }
+    } else {
+      const nx = (ball.x - cx) / d;
+      const ny = (ball.y - cy) / d;
+      const dot = ball.vx * nx + ball.vy * ny;
+      ball.vx -= 2 * dot * nx;
+      ball.vy -= 2 * dot * ny;
+      const overlap = d + ball.r - activeRing.radius;
+      ball.x -= nx * overlap;
+      ball.y -= ny * overlap;
+      playWallSound();
     }
-  }
-
-  // Linien klauen: berührt ein Ball die Linie eines anderen, wechselt sie den Besitzer
-  const byId = {};
-  for (const b of alive) byId[b.id] = b;
-
-  for (const line of lines) {
-    const owner = byId[line.owner];
-    const ox = owner ? owner.x : line.ax;
-    const oy = owner ? owner.y : line.ay;
-
-    for (const b of alive) {
-      if (b.id === line.owner) continue;
-      const d = pointToSegmentDist(b.x, b.y, line.ax, line.ay, ox, oy);
-      if (d <= b.r + CAPTURE_MARGIN) {
-        line.owner = b.id;
-        break;
-      }
-    }
-  }
-
-  // Sterbe-Check: 0 Linien = tot
-  const lineCounts = {};
-  for (const b of balls) lineCounts[b.id] = 0;
-  for (const line of lines) lineCounts[line.owner]++;
-
-  for (const b of balls) {
-    if (b.alive && lineCounts[b.id] === 0) {
-      b.alive = false;
-      playDeathSound();
-    }
-  }
-
-  const remaining = balls.filter(b => b.alive);
-
-  // 70-Sekunden-Gesamtlimit: steht bis dahin kein Sieger fest, wird zufällig einer bestimmt
-  if (!finished && remaining.length > 1 && gameStartTime !== null && Date.now() - gameStartTime >= TOTAL_TIME_LIMIT) {
-    const winner = remaining[Math.floor(Math.random() * remaining.length)];
-    declareWinner(winner);
-    return;
-  }
-
-  if (remaining.length === 1 && !finished) {
-    declareWinner(remaining[0]);
-  } else if (remaining.length === 0 && !finished) {
-    finished = true;
-    statusEl.textContent = 'All balls have been eliminated!';
-    statusEl.style.color = '#fff';
-  } else if (!finished) {
-    statusEl.textContent = `Still in the race: ${remaining.length}`;
-    statusEl.style.color = '#fff';
   }
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Kreis
+  for (let i = 0; i < window_.length; i++) {
+    const ring = window_[i];
+    const gapAngle = ring.gapBase + ring.rotation;
+    const start = gapAngle + GAP_HALF_ANGLE;
+    const end = gapAngle - GAP_HALF_ANGLE + Math.PI * 2;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, ring.radius, start, end);
+    ctx.strokeStyle = (i === 0) ? '#e879f9' : `hsl(${ring.hue}, 85%, 58%)`;
+    ctx.lineWidth = i === 0 ? 2.5 : 1.8;
+    ctx.stroke();
+  }
+
+  // Ball
   ctx.beginPath();
-  ctx.arc(circle.cx, circle.cy, circle.r, 0, Math.PI * 2);
-  if (finished && winnerColor) {
-    ctx.strokeStyle = winnerColor;
-    ctx.lineWidth = 6;
-    ctx.shadowColor = winnerColor;
-    ctx.shadowBlur = 45;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  } else {
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-  }
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#c026d3';
+  ctx.fill();
 
-  const byId = {};
-  for (const b of balls) byId[b.id] = b;
-
-  // Linien
-  ctx.lineWidth = 1;
-  for (const line of lines) {
-    const owner = byId[line.owner];
-    if (!owner || !owner.alive) continue;
-    ctx.beginPath();
-    ctx.moveTo(line.ax, line.ay);
-    ctx.lineTo(owner.x, owner.y);
-    ctx.strokeStyle = `hsla(${owner.hue}, 85%, 60%, 0.4)`;
-    ctx.stroke();
-  }
-
-  // Bälle
-  for (const b of balls) {
-    if (!b.alive) continue;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fillStyle = b.color;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
+  drawParticles();
 }
 
 function loop() {
