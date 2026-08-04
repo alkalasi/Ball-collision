@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Can Exponential Deal 10^60 Damage?</title>
+<title>Can Catalan Deal Infinite Damage?</title>
 <style>
   html, body {
     margin: 0;
@@ -102,7 +102,7 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">Can <span class="accent">EXPONENTIAL</span> ^2 Deal 10^60 Damage in 60 Seconds?</div>
+  <div id="title">Can <span class="accent">CATALAN</span> C Deal Infinite Damage in 60 Seconds?</div>
   <div id="timer">55.4s</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
@@ -135,7 +135,7 @@ const box = {
 const boxCx = (box.left + box.right) / 2;
 const boxCy = (box.top + box.bottom) / 2;
 
-const START_HEALTH = BigInt('1' + '0'.repeat(60)); // 10^60
+const START_HEALTH = Infinity;
 const START_TIME = 60;
 const BIG_RADIUS = (box.right - box.left) * 0.32;
 const BALL_RADIUS = 52;
@@ -143,7 +143,9 @@ const BALL_SPEED = 7.5 * 0.9 * 0.75 * 1.25 * 1.3 * 1.3 * 1.3;
 const BIG_CIRCLE_SPEED = 1.1; // etwas schnellere Eigenbewegung
 
 let health = START_HEALTH;
-let expValue = 2n;
+let catN = 0, catValue = 1;
+let hitCount = 0;
+const HITS_TO_DESTROY = 200;
 let currentDamage = 0;
 let ball = null;
 let bigCircle = null;
@@ -211,7 +213,8 @@ function dist(x1, y1, x2, y2) {
 }
 
 function formatHealth(n) {
-  return n < 0n ? '0' : n.toString();
+  if (n === Infinity) return '∞';
+  return Math.max(0, Math.round(n)).toString();
 }
 
 function spawnDustParticles() {
@@ -255,7 +258,9 @@ function updateDamagePopups() {
 
 function init() {
   health = START_HEALTH;
-  expValue = 2n;
+  catN = 0;
+  catValue = 1;
+  hitCount = 0;
   currentDamage = 0;
   started = false;
   touchingBig = false;
@@ -302,9 +307,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'k' || e.key === 'K') startGame();
 });
 
-function nextExpDamage() {
-  const dmg = expValue;
-  expValue = expValue * 2n; // 2 hoch x: verdoppelt sich bei jedem Treffer
+function nextCatalanDamage() {
+  const dmg = catValue;
+  // Rekursion: C(n+1) = C(n) * 2*(2n+1) / (n+2)
+  catValue = catValue * 2 * (2 * catN + 1) / (catN + 2);
+  catN++;
   return dmg;
 }
 
@@ -366,10 +373,10 @@ function update() {
   const d = dist(ball.x, ball.y, bigCircle.x, bigCircle.y);
   if (d < BIG_RADIUS + ball.r) {
     if (!touchingBig && health > 0) {
-      const dmg = nextExpDamage();
+      const dmg = nextCatalanDamage();
       currentDamage = dmg;
-      health = health - dmg;
-      if (health < 0n) health = 0n;
+      health = Math.max(0, health - dmg);
+      if (Number.isNaN(health)) health = Infinity;
       damageEl.textContent = `DAMAGE: ${currentDamage}`;
       playHitSound();
       damagePopups.push({
@@ -379,7 +386,8 @@ function update() {
         life: 40,
         maxLife: 40
       });
-      if (health <= 0) {
+      hitCount++;
+      if (health <= 0 || dmg === Infinity || hitCount >= HITS_TO_DESTROY) {
         destroyed = true;
         spawnDustParticles();
       }
@@ -458,7 +466,7 @@ function draw() {
   ctx.fillStyle = '#111111';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('^2', ball.x, ball.y);
+  ctx.fillText('C', ball.x, ball.y);
 }
 
 function loop() {
