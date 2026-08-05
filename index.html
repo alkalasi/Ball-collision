@@ -2,15 +2,15 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Can Tribonacci Deal 10^52 Damage?</title>
+<title>Which Ball Will Survive?</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
-    background: #faf3e0;
+    background: #0a0a0a;
     overflow: hidden;
     height: 100%;
-    font-family: 'Arial Black', Arial, sans-serif;
+    font-family: 'Segoe UI', Arial, sans-serif;
   }
   #wrap {
     position: relative;
@@ -24,70 +24,46 @@
   canvas {
     display: block;
   }
-  #title {
-    position: relative;
-    margin-top: 3%;
-    color: #111;
-    font-weight: 900;
-    font-size: clamp(16px, 4vw, 24px);
-    text-align: center;
-    width: 94%;
-    line-height: 1.25;
-  }
-  #title .accent {
-    background: #ef4444;
-    color: #111;
-    padding: 0 4px;
-    border-radius: 3px;
-  }
   #canvas-wrap {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-top: 2%;
   }
-  #timer {
-    position: relative;
-    margin-top: 1.5%;
-    color: #22c55e;
-    font-size: clamp(18px, 4vw, 26px);
-    font-weight: 900;
-  }
-  #damage {
-    position: relative;
-    margin-top: 2.5%;
-    color: #f2a900;
-    font-weight: 900;
-    font-size: clamp(16px, 3.5vw, 22px);
-    background: rgba(0,0,0,0.05);
-    padding: 4px 14px;
-    border-radius: 6px;
-    letter-spacing: 1px;
-  }
-  #start-overlay {
+  #countdown {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     color: #fff;
     font-weight: 900;
-    font-size: clamp(18px, 4.5vw, 28px);
+    font-size: clamp(60px, 15vw, 120px);
+    text-shadow: 0 4px 12px rgba(0,0,0,0.7);
+    pointer-events: none;
+  }
+  #title {
+    position: relative;
+    margin-top: 4%;
+    color: #fff;
+    font-weight: 900;
+    font-size: clamp(20px, 4.5vw, 32px);
     text-align: center;
-    background: rgba(0,0,0,0.75);
-    padding: 14px 22px;
-    border-radius: 14px;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1.3;
-    cursor: pointer;
-    z-index: 10;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    width: 90%;
+    line-height: 1.15;
+  }
+  #status {
+    position: relative;
+    margin-top: 4%;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    opacity: 0.9;
   }
   #restart {
     position: relative;
-    margin-top: 3%;
+    margin-top: 6%;
     background: #17b3d4;
     color: #fff;
     border: none;
@@ -102,390 +78,396 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">Can <span class="accent">TRIBONACCI</span> φ Deal 10^52 Damage in 60 Seconds?</div>
-  <div id="timer">55.4s</div>
+  <div id="title">Choose a color</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
-    <div id="start-overlay">Press K<br>to start</div>
+    <div id="countdown"></div>
   </div>
-  <div id="damage">DAMAGE: 0</div>
+  <div id="status"></div>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const timerEl = document.getElementById('timer');
-const damageEl = document.getElementById('damage');
+const statusEl = document.getElementById('status');
+const titleEl = document.getElementById('title');
+const countdownEl = document.getElementById('countdown');
 
 function size() {
-  const reserved = 220;
+  const reserved = 220; // Platz für Titel, Status und Button
   const s = Math.min(window.innerWidth * 0.92, window.innerHeight - reserved);
   canvas.width = s;
   canvas.height = s;
 }
 size();
+window.addEventListener('resize', () => {
+  size();
+  circle.r = canvas.width / 2 - 10;
+  circle.cx = canvas.width / 2;
+  circle.cy = canvas.height / 2;
+});
 
-const MARGIN = 10;
-const box = {
-  left: MARGIN,
-  right: canvas.width - MARGIN,
-  top: MARGIN,
-  bottom: canvas.height - MARGIN
+const circle = {
+  cx: canvas.width / 2,
+  cy: canvas.height / 2,
+  r: canvas.width / 2 - 10
 };
-const boxCx = (box.left + box.right) / 2;
-const boxCy = (box.top + box.bottom) / 2;
 
-const START_HEALTH = BigInt('1' + '0'.repeat(52)); // 10^52
-const START_TIME = 60;
-const BIG_RADIUS = (box.right - box.left) * 0.32;
-const BALL_RADIUS = 52;
-const BALL_SPEED = 7.5 * 0.9 * 0.75 * 1.25 * 1.3 * 1.3 * 1.3;
-const BIG_CIRCLE_SPEED = 1.1; // etwas schnellere Eigenbewegung
+const BALL_RADIUS = 12;
+const SPEED = 4.5;
+const NUM_BALLS = 8;
+const LINES_PER_BALL = 17;
+const TOTAL_LINES = NUM_BALLS * LINES_PER_BALL; // 136
+const CAPTURE_MARGIN = 1.5;
 
-let health = START_HEALTH;
-let tribA = 0n, tribB = 1n, tribC = 1n;
-let currentDamage = 0;
-let ball = null;
-let bigCircle = null;
-let particles = [];
-let damagePopups = [];
-let started = false;
-let startTime = 0;
-let touchingBig = false;
-let destroyed = false;
+let balls = [];
+let lines = [];
+let finished = false;
 
-// --- Sound Engine (Web Audio API) ---
+// --- Sound Engine (Web Audio API, keine externen Dateien nötig) ---
 let audioCtx = null;
 function ensureAudio() {
   if (!audioCtx) {
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) { /* Audio nicht verfügbar */ }
-  }
-  if (audioCtx && audioCtx.state === 'suspended') {
+  } else if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
-  if (audioCtx) {
-    const unlockOsc = audioCtx.createOscillator();
-    const unlockGain = audioCtx.createGain();
-    unlockGain.gain.value = 0;
-    unlockOsc.connect(unlockGain);
-    unlockGain.connect(audioCtx.destination);
-    unlockOsc.start();
-    unlockOsc.stop(audioCtx.currentTime + 0.01);
+}
+document.addEventListener('click', ensureAudio);
+document.addEventListener('touchstart', ensureAudio);
+
+function playTone(freq, duration, type, volume) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playCollisionSound() {
+  playTone(550 + Math.random() * 250, 0.07, 'sine', 0.1);
+}
+
+function playDeathSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(480, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + 0.4);
+  gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+function playVictorySound() {
+  playTone(500, 0.15, 'triangle', 0.15);
+  setTimeout(() => playTone(750, 0.25, 'triangle', 0.15), 120);
+}
+// --- Ende Sound Engine ---
+let phase = 'countdown'; // 'countdown' | 'running' | 'finished'
+let countdownTimer = null;
+let gameStartTime = null;
+const TOTAL_TIME_LIMIT = 70000; // 70 Sekunden Gesamtlimit
+const SPEED_BOOST_THRESHOLD = 3;
+const SPEED_BOOST_FACTOR = 1.06;
+const MAX_SPEED = SPEED * 5;
+let winnerColor = null;
+let winnerHue = null;
+
+function capSpeed(b) {
+  const s = Math.hypot(b.vx, b.vy);
+  if (s > MAX_SPEED) {
+    b.vx = (b.vx / s) * MAX_SPEED;
+    b.vy = (b.vy / s) * MAX_SPEED;
   }
 }
 
-function playWallSound() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(500 + Math.random() * 150, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.06);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.06);
+function hueToName(h) {
+  h = ((h % 360) + 360) % 360;
+  if (h < 15 || h >= 345) return 'Red';
+  if (h < 45) return 'Orange';
+  if (h < 70) return 'Yellow';
+  if (h < 170) return 'Green';
+  if (h < 200) return 'Cyan';
+  if (h < 260) return 'Blue';
+  if (h < 290) return 'Purple';
+  return 'Pink';
 }
 
-function playHitSound() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(180, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(90, audioCtx.currentTime + 0.12);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.15);
+function declareWinner(winner) {
+  finished = true;
+  for (const b of balls) {
+    if (b !== winner) b.alive = false;
+  }
+  winnerColor = winner.color;
+  winnerHue = winner.hue;
+  statusEl.style.color = '#fff';
+  statusEl.textContent = `Winner: ${hueToName(winner.hue)}`;
+  playVictorySound();
 }
-// --- Ende Sound Engine ---
 
 function dist(x1, y1, x2, y2) {
   return Math.hypot(x1 - x2, y1 - y2);
 }
 
-function formatHealth(n) {
-  return n < 0n ? '0' : n.toString();
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return dist(px, py, x1, y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return dist(px, py, x1 + t * dx, y1 + t * dy);
 }
 
-function spawnDustParticles() {
-  const count = 60;
-  for (let i = 0; i < count; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const d = Math.random() * BIG_RADIUS;
-    const speed = 0.5 + Math.random() * 2.2;
-    particles.push({
-      x: bigCircle.x + Math.cos(a) * d,
-      y: bigCircle.y + Math.sin(a) * d,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
-      life: 35 + Math.random() * 25,
-      maxLife: 60,
-      size: 1 + Math.random() * 2.2
-    });
-  }
+function randColorFromHue(h) {
+  return `hsl(${h}, 85%, 58%)`;
 }
 
-function updateParticles() {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vx *= 0.97;
-    p.vy *= 0.97;
-    p.life--;
-    if (p.life <= 0) particles.splice(i, 1);
-  }
-}
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  phase = 'countdown';
+  titleEl.textContent = 'Choose a color';
+  let value = 3;
+  countdownEl.textContent = value;
+  countdownEl.style.display = 'block';
 
-function updateDamagePopups() {
-  for (let i = damagePopups.length - 1; i >= 0; i--) {
-    const p = damagePopups[i];
-    p.y -= 0.6;
-    p.life--;
-    if (p.life <= 0) damagePopups.splice(i, 1);
-  }
+  countdownTimer = setInterval(() => {
+    value--;
+    if (value <= 0) {
+      clearInterval(countdownTimer);
+      countdownEl.style.display = 'none';
+      titleEl.textContent = 'Which BALL will manage to survive?';
+      phase = 'running';
+      gameStartTime = Date.now();
+    } else {
+      countdownEl.textContent = value;
+    }
+  }, 1000);
 }
 
 function init() {
-  health = START_HEALTH;
-  tribA = 0n;
-  tribB = 1n;
-  tribC = 1n;
-  currentDamage = 0;
-  started = false;
-  touchingBig = false;
-  destroyed = false;
-  particles = [];
-  damagePopups = [];
-  damageEl.textContent = `DAMAGE: 0`;
-  timerEl.textContent = `${START_TIME.toFixed(1)}s`;
-  timerEl.style.color = '#22c55e';
+  balls = [];
+  lines = [];
+  finished = false;
+  gameStartTime = null;
+  winnerColor = null;
+  winnerHue = null;
+  statusEl.textContent = '';
 
-  const bigDir = Math.random() * Math.PI * 2;
-  bigCircle = {
-    x: boxCx,
-    y: boxCy,
-    vx: Math.cos(bigDir) * BIG_CIRCLE_SPEED,
-    vy: Math.sin(bigDir) * BIG_CIRCLE_SPEED,
-    r: BIG_RADIUS
-  };
+  // 8 Bälle gleichmäßig verteilt an der Wand
+  for (let i = 0; i < NUM_BALLS; i++) {
+    const angle = (i / NUM_BALLS) * Math.PI * 2;
+    const x = circle.cx + Math.cos(angle) * (circle.r - BALL_RADIUS);
+    const y = circle.cy + Math.sin(angle) * (circle.r - BALL_RADIUS);
 
-  const dir = Math.random() * Math.PI * 2;
-  ball = {
-    x: boxCx + BIG_RADIUS + BALL_RADIUS + 4,
-    y: boxCy,
-    vx: Math.cos(dir) * BALL_SPEED,
-    vy: Math.sin(dir) * BALL_SPEED,
-    r: BALL_RADIUS
-  };
+    // Richtung: nach innen mit leichtem zufälligem Winkel-Offset
+    const inward = angle + Math.PI + (Math.random() - 0.5) * 0.9;
+    const hue = Math.floor((360 / NUM_BALLS) * i + Math.random() * 20);
 
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'flex';
+    balls.push({
+      id: i,
+      x, y,
+      vx: Math.cos(inward) * SPEED,
+      vy: Math.sin(inward) * SPEED,
+      r: BALL_RADIUS,
+      hue,
+      color: randColorFromHue(hue),
+      alive: true
+    });
+  }
+
+  // 136 Ankerpunkte gleichmäßig am Rand, je 17 einem Ball zugeordnet (dessen eigener Sektor)
+  for (let i = 0; i < NUM_BALLS; i++) {
+    for (let j = 0; j < LINES_PER_BALL; j++) {
+      const k = i * LINES_PER_BALL + j;
+      const angle = (k / TOTAL_LINES) * Math.PI * 2;
+      lines.push({
+        ax: circle.cx + Math.cos(angle) * circle.r,
+        ay: circle.cy + Math.sin(angle) * circle.r,
+        owner: i
+      });
+    }
+  }
+
+  startCountdown();
 }
 init();
 
-function startGame() {
-  if (started) return;
-  ensureAudio();
-  started = true;
-  startTime = Date.now();
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'none';
-}
-document.getElementById('start-overlay').addEventListener('click', startGame);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'k' || e.key === 'K') startGame();
-});
-
-function nextTribonacciDamage() {
-  const dmg = tribC;
-  const next = tribA + tribB + tribC;
-  tribA = tribB;
-  tribB = tribC;
-  tribC = next;
-  return dmg;
-}
-
 function update() {
-  if (!started) return;
+  if (finished || phase !== 'running') return;
 
-  const elapsed = (Date.now() - startTime) / 1000;
-  const remaining = START_TIME - elapsed;
-  timerEl.textContent = `${remaining.toFixed(1)}s`;
-  timerEl.style.color = remaining < 0 ? '#ef4444' : '#22c55e';
+  const alive = balls.filter(b => b.alive);
+  const boostActive = alive.length <= SPEED_BOOST_THRESHOLD && alive.length > 1;
 
-  updateParticles();
-  updateDamagePopups();
+  for (const b of alive) {
+    b.x += b.vx;
+    b.y += b.vy;
 
-  ball.x += ball.vx;
-  ball.y += ball.vy;
+    // Wandkollision (keine Gravitation, rein elastisch)
+    const d = dist(b.x, b.y, circle.cx, circle.cy);
+    if (d + b.r > circle.r) {
+      const nx = (b.x - circle.cx) / d;
+      const ny = (b.y - circle.cy) / d;
+      const dot = b.vx * nx + b.vy * ny;
+      b.vx -= 2 * dot * nx;
+      b.vy -= 2 * dot * ny;
+      const overlap = d + b.r - circle.r;
+      b.x -= nx * overlap;
+      b.y -= ny * overlap;
+      playCollisionSound();
 
-  // Wände (Ball)
-  if (ball.x - ball.r < box.left) {
-    ball.x = box.left + ball.r;
-    ball.vx *= -1;
-    playWallSound();
-  } else if (ball.x + ball.r > box.right) {
-    ball.x = box.right - ball.r;
-    ball.vx *= -1;
-    playWallSound();
-  }
-  if (ball.y - ball.r < box.top) {
-    ball.y = box.top + ball.r;
-    ball.vy *= -1;
-    playWallSound();
-  } else if (ball.y + ball.r > box.bottom) {
-    ball.y = box.bottom - ball.r;
-    ball.vy *= -1;
-    playWallSound();
-  }
-
-  if (destroyed) return;
-
-  // Der große Kreis bewegt sich langsam und prallt auch von den Wänden ab
-  bigCircle.x += bigCircle.vx;
-  bigCircle.y += bigCircle.vy;
-  if (bigCircle.x - bigCircle.r < box.left) {
-    bigCircle.x = box.left + bigCircle.r;
-    bigCircle.vx *= -1;
-  } else if (bigCircle.x + bigCircle.r > box.right) {
-    bigCircle.x = box.right - bigCircle.r;
-    bigCircle.vx *= -1;
-  }
-  if (bigCircle.y - bigCircle.r < box.top) {
-    bigCircle.y = box.top + bigCircle.r;
-    bigCircle.vy *= -1;
-  } else if (bigCircle.y + bigCircle.r > box.bottom) {
-    bigCircle.y = box.bottom - bigCircle.r;
-    bigCircle.vy *= -1;
-  }
-
-  // Kollision mit dem großen Kreis
-  const d = dist(ball.x, ball.y, bigCircle.x, bigCircle.y);
-  if (d < BIG_RADIUS + ball.r) {
-    if (!touchingBig && health > 0) {
-      const dmg = nextTribonacciDamage();
-      currentDamage = dmg;
-      health = health - dmg;
-      if (health < 0n) health = 0n;
-      damageEl.textContent = `DAMAGE: ${currentDamage}`;
-      playHitSound();
-      damagePopups.push({
-        x: ball.x,
-        y: ball.y,
-        text: `-${dmg}`,
-        life: 40,
-        maxLife: 40
-      });
-      if (health <= 0) {
-        destroyed = true;
-        spawnDustParticles();
+      if (boostActive) {
+        b.vx *= SPEED_BOOST_FACTOR;
+        b.vy *= SPEED_BOOST_FACTOR;
+        capSpeed(b);
       }
     }
-    touchingBig = true;
+  }
 
-    const nx = (ball.x - bigCircle.x) / d;
-    const ny = (ball.y - bigCircle.y) / d;
-    const dot = ball.vx * nx + ball.vy * ny;
-    ball.vx -= 2 * dot * nx;
-    ball.vy -= 2 * dot * ny;
-    const overlap = BIG_RADIUS + ball.r - d;
-    ball.x += nx * overlap;
-    ball.y += ny * overlap;
-  } else {
-    touchingBig = false;
+  // Ball-Ball-Kollision (elastisch)
+  for (let i = 0; i < alive.length; i++) {
+    for (let j = i + 1; j < alive.length; j++) {
+      const a = alive[i], bb = alive[j];
+      const d = dist(a.x, a.y, bb.x, bb.y);
+      if (d < a.r + bb.r && d > 0) {
+        const nx = (bb.x - a.x) / d;
+        const ny = (bb.y - a.y) / d;
+        const dvx = bb.vx - a.vx;
+        const dvy = bb.vy - a.vy;
+        const rel = dvx * nx + dvy * ny;
+        if (rel < 0) {
+          a.vx += rel * nx;
+          a.vy += rel * ny;
+          bb.vx -= rel * nx;
+          bb.vy -= rel * ny;
+          const overlap = (a.r + bb.r - d) / 2;
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          bb.x += nx * overlap;
+          bb.y += ny * overlap;
+          playCollisionSound();
+
+          if (boostActive) {
+            a.vx *= SPEED_BOOST_FACTOR;
+            a.vy *= SPEED_BOOST_FACTOR;
+            bb.vx *= SPEED_BOOST_FACTOR;
+            bb.vy *= SPEED_BOOST_FACTOR;
+            capSpeed(a);
+            capSpeed(bb);
+          }
+        }
+      }
+    }
+  }
+
+  // Linien klauen: berührt ein Ball die Linie eines anderen, wechselt sie den Besitzer
+  const byId = {};
+  for (const b of alive) byId[b.id] = b;
+
+  for (const line of lines) {
+    const owner = byId[line.owner];
+    const ox = owner ? owner.x : line.ax;
+    const oy = owner ? owner.y : line.ay;
+
+    for (const b of alive) {
+      if (b.id === line.owner) continue;
+      const d = pointToSegmentDist(b.x, b.y, line.ax, line.ay, ox, oy);
+      if (d <= b.r + CAPTURE_MARGIN) {
+        line.owner = b.id;
+        break;
+      }
+    }
+  }
+
+  // Sterbe-Check: 0 Linien = tot
+  const lineCounts = {};
+  for (const b of balls) lineCounts[b.id] = 0;
+  for (const line of lines) lineCounts[line.owner]++;
+
+  for (const b of balls) {
+    if (b.alive && lineCounts[b.id] === 0) {
+      b.alive = false;
+      playDeathSound();
+    }
+  }
+
+  const remaining = balls.filter(b => b.alive);
+
+  // 70-Sekunden-Gesamtlimit: steht bis dahin kein Sieger fest, wird zufällig einer bestimmt
+  if (!finished && remaining.length > 1 && gameStartTime !== null && Date.now() - gameStartTime >= TOTAL_TIME_LIMIT) {
+    const winner = remaining[Math.floor(Math.random() * remaining.length)];
+    declareWinner(winner);
+    return;
+  }
+
+  if (remaining.length === 1 && !finished) {
+    declareWinner(remaining[0]);
+  } else if (remaining.length === 0 && !finished) {
+    finished = true;
+    statusEl.textContent = 'All balls have been eliminated!';
+    statusEl.style.color = '#fff';
+  } else if (!finished) {
+    statusEl.textContent = `Still in the race: ${remaining.length}`;
+    statusEl.style.color = '#fff';
   }
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Box
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-  ctx.strokeStyle = '#111111';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-
-  // Großer Kreis (Health) - nur solange nicht zerstört
-  if (!destroyed) {
-    ctx.beginPath();
-    ctx.arc(bigCircle.x, bigCircle.y, BIG_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = '#c7c7c7';
-    ctx.fill();
-
-    // Health-Zahl: bei sehr langen Zahlen mehrzeilig stapeln statt winzig zu schrumpfen
-    const healthText = formatHealth(health);
-    const minFontSize = 11;
-    let fontSize = Math.max(minFontSize, BIG_RADIUS * 0.34);
-    ctx.font = `900 ${fontSize}px Arial`;
-
-    const maxLineWidth = BIG_RADIUS * 1.7;
-    // Wie viele Zeichen passen bei minFontSize etwa in eine Zeile?
-    ctx.font = `900 ${minFontSize}px Arial`;
-    const charWidth = ctx.measureText('0').width || 7;
-    const maxCharsPerLine = Math.max(1, Math.floor(maxLineWidth / charWidth));
-
-    const lines = [];
-    for (let i = 0; i < healthText.length; i += maxCharsPerLine) {
-      lines.push(healthText.slice(i, i + maxCharsPerLine));
-    }
-
-    // Zeilenhöhe an verfügbaren Platz anpassen, damit alle Zeilen reinpassen
-    const maxBlockHeight = BIG_RADIUS * 1.7;
-    let lineHeight = minFontSize * 1.05;
-    if (lines.length * lineHeight > maxBlockHeight) {
-      lineHeight = maxBlockHeight / lines.length;
-    }
-    fontSize = Math.max(7, lineHeight * 0.9);
-    ctx.font = `900 ${fontSize}px Arial`;
-
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const startY = bigCircle.y - ((lines.length - 1) * lineHeight) / 2;
-    for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], bigCircle.x, startY + i * lineHeight);
-    }
-  }
-
-  // Staub-Partikel (Zerfall)
-  for (const p of particles) {
-    const alpha = Math.max(0, p.life / p.maxLife);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(120, 120, 120, ${alpha})`;
-    ctx.fill();
-  }
-
-  // Damage-Popups
-  for (const p of damagePopups) {
-    const alpha = Math.max(0, p.life / p.maxLife);
-    ctx.font = '900 16px Arial';
-    ctx.fillStyle = `rgba(220, 38, 38, ${alpha})`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(p.text, p.x, p.y);
-  }
-
-  // Ball
+  // Kreis
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-  ctx.fillStyle = '#ef4444';
-  ctx.fill();
-  ctx.font = `900 ${ball.r * 0.85}px Arial`;
-  ctx.fillStyle = '#111111';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('φ', ball.x, ball.y);
+  ctx.arc(circle.cx, circle.cy, circle.r, 0, Math.PI * 2);
+  if (finished && winnerColor) {
+    ctx.strokeStyle = winnerColor;
+    ctx.lineWidth = 6;
+    ctx.shadowColor = winnerColor;
+    ctx.shadowBlur = 45;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+
+  const byId = {};
+  for (const b of balls) byId[b.id] = b;
+
+  // Linien
+  ctx.lineWidth = 1;
+  for (const line of lines) {
+    const owner = byId[line.owner];
+    if (!owner || !owner.alive) continue;
+    ctx.beginPath();
+    ctx.moveTo(line.ax, line.ay);
+    ctx.lineTo(owner.x, owner.y);
+    ctx.strokeStyle = `hsla(${owner.hue}, 85%, 60%, 0.4)`;
+    ctx.stroke();
+  }
+
+  // Bälle
+  for (const b of balls) {
+    if (!b.alive) continue;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = b.color;
+    ctx.shadowColor = b.color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
 }
 
 function loop() {
