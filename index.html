@@ -176,6 +176,43 @@ function segmentNormal(x1, y1, x2, y2) {
   return { nx: -dy / len, ny: dx / len };
 }
 
+// --- Sound Engine (Web Audio API) ---
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) { /* Audio nicht verfügbar */ }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  if (audioCtx) {
+    const unlockOsc = audioCtx.createOscillator();
+    const unlockGain = audioCtx.createGain();
+    unlockGain.gain.value = 0;
+    unlockOsc.connect(unlockGain);
+    unlockGain.connect(audioCtx.destination);
+    unlockOsc.start();
+    unlockOsc.stop(audioCtx.currentTime + 0.01);
+  }
+}
+
+function playBarSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(400 + Math.random() * 200, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.08);
+}
+// --- Ende Sound Engine ---
+
 function init() {
   started = false;
   finished = false;
@@ -200,6 +237,7 @@ init();
 
 function startGame() {
   if (started) return;
+  ensureAudio();
   started = true;
   const overlay = document.getElementById('start-overlay');
   if (overlay) overlay.style.display = 'none';
@@ -234,6 +272,7 @@ function handleBarCollision(bar) {
       const overlap = shape.r + BAR_THICKNESS / 2 - d;
       shape.x += nnx * overlap;
       shape.y += nny * overlap;
+      playBarSound();
       levelUp();
     }
   }
