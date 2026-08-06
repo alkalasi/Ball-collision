@@ -2,15 +2,15 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Which Ball Will Survive?</title>
+<title>Shrinking Polygon Funnel</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
-    background: #0a0a0a;
+    background: #faf3e0;
     overflow: hidden;
     height: 100%;
-    font-family: 'Segoe UI', Arial, sans-serif;
+    font-family: 'Arial Black', Arial, sans-serif;
   }
   #wrap {
     position: relative;
@@ -24,46 +24,62 @@
   canvas {
     display: block;
   }
+  #shapeName {
+    position: relative;
+    margin-top: 4%;
+    color: #111;
+    font-weight: 900;
+    font-size: clamp(22px, 6vw, 34px);
+    text-align: center;
+    text-transform: lowercase;
+  }
+  #shapeValue {
+    position: relative;
+    margin-top: 0.2%;
+    color: #111;
+    font-weight: 900;
+    font-size: clamp(18px, 4.5vw, 26px);
+    text-align: center;
+  }
   #canvas-wrap {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+    margin-top: 1%;
   }
-  #countdown {
+  #start-overlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     color: #fff;
     font-weight: 900;
-    font-size: clamp(60px, 15vw, 120px);
-    text-shadow: 0 4px 12px rgba(0,0,0,0.7);
-    pointer-events: none;
-  }
-  #title {
-    position: relative;
-    margin-top: 4%;
-    color: #fff;
-    font-weight: 900;
-    font-size: clamp(20px, 4.5vw, 32px);
+    font-size: clamp(18px, 4.5vw, 28px);
     text-align: center;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
-    width: 90%;
-    line-height: 1.15;
+    background: rgba(0,0,0,0.75);
+    padding: 14px 22px;
+    border-radius: 14px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.3;
+    cursor: pointer;
+    z-index: 10;
   }
   #status {
     position: relative;
-    margin-top: 4%;
-    color: #fff;
+    margin-top: 2%;
+    color: #4caf1e;
+    font-weight: 800;
     font-size: 18px;
-    font-weight: 700;
     text-align: center;
-    opacity: 0.9;
+    min-height: 24px;
   }
   #restart {
     position: relative;
-    margin-top: 6%;
+    margin-top: 2%;
     background: #17b3d4;
     color: #fff;
     border: none;
@@ -78,10 +94,11 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">Choose a color</div>
+  <div id="shapeName">triangle</div>
+  <div id="shapeValue">565.00</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
-    <div id="countdown"></div>
+    <div id="start-overlay">Press K<br>to start</div>
   </div>
   <div id="status"></div>
 </div>
@@ -89,132 +106,54 @@
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const nameEl = document.getElementById('shapeName');
+const valueEl = document.getElementById('shapeValue');
 const statusEl = document.getElementById('status');
-const titleEl = document.getElementById('title');
-const countdownEl = document.getElementById('countdown');
 
 function size() {
-  const reserved = 220; // Platz für Titel, Status und Button
+  const reserved = 230;
   const s = Math.min(window.innerWidth * 0.92, window.innerHeight - reserved);
   canvas.width = s;
   canvas.height = s;
 }
 size();
-window.addEventListener('resize', () => {
-  size();
-  circle.r = canvas.width / 2 - 10;
-  circle.cx = canvas.width / 2;
-  circle.cy = canvas.height / 2;
-});
 
-const circle = {
-  cx: canvas.width / 2,
-  cy: canvas.height / 2,
-  r: canvas.width / 2 - 10
+const box = { left: 4, right: canvas.width - 4, top: 4, bottom: canvas.height - 4 };
+
+const GAP_WIDTH = canvas.width * 0.1;
+const FUNNEL_TOP_Y = box.top + (box.bottom - box.top) * 0.62;
+const gapCenterX = (box.left + box.right) / 2;
+
+// Trichterbalken: von den oberen Ecken des Trichterbereichs runter zur Lücke am Boden
+const leftBar = {
+  x1: box.left, y1: FUNNEL_TOP_Y,
+  x2: gapCenterX - GAP_WIDTH / 2, y2: box.bottom
+};
+const rightBar = {
+  x1: box.right, y1: FUNNEL_TOP_Y,
+  x2: gapCenterX + GAP_WIDTH / 2, y2: box.bottom
 };
 
-const BALL_RADIUS = 12;
-const SPEED = 4.5;
-const NUM_BALLS = 8;
-const LINES_PER_BALL = 17;
-const TOTAL_LINES = NUM_BALLS * LINES_PER_BALL; // 136
-const CAPTURE_MARGIN = 1.5;
+const START_RADIUS = canvas.width * 0.26;
+const START_VALUE = 565.00;
+const SHRINK_FACTOR = 0.92;
+const GRAVITY = 0.28;
+const BAR_THICKNESS = 10;
 
-let balls = [];
-let lines = [];
+let shape = null;
+let started = false;
 let finished = false;
 
-// --- Sound Engine (Web Audio API, keine externen Dateien nötig) ---
-let audioCtx = null;
-function ensureAudio() {
-  if (!audioCtx) {
-    try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) { /* Audio nicht verfügbar */ }
-  } else if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-}
-document.addEventListener('click', ensureAudio);
-document.addEventListener('touchstart', ensureAudio);
+// --- Polygon-Namen (units + tens + "gon", nach dem gleichen Schema wie "tetrahexacontagon") ---
+const UNITS = ['', 'hena', 'di', 'tri', 'tetra', 'penta', 'hexa', 'hepta', 'octa', 'ennea'];
+const TENS = { 0: '', 10: 'deca', 20: 'icosa', 30: 'triaconta', 40: 'tetraconta', 50: 'pentaconta', 60: 'hexaconta', 70: 'heptaconta', 80: 'octaconta', 90: 'enneaconta' };
+const SPECIAL = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'nonagon', 10: 'decagon', 11: 'hendecagon', 12: 'dodecagon' };
 
-function playTone(freq, duration, type, volume) {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-  gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration);
-}
-
-function playCollisionSound() {
-  playTone(550 + Math.random() * 250, 0.07, 'sine', 0.1);
-}
-
-function playDeathSound() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(480, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + 0.4);
-  gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-function playVictorySound() {
-  playTone(500, 0.15, 'triangle', 0.15);
-  setTimeout(() => playTone(750, 0.25, 'triangle', 0.15), 120);
-}
-// --- Ende Sound Engine ---
-let phase = 'countdown'; // 'countdown' | 'running' | 'finished'
-let countdownTimer = null;
-let gameStartTime = null;
-const TOTAL_TIME_LIMIT = 70000; // 70 Sekunden Gesamtlimit
-const SPEED_BOOST_THRESHOLD = 3;
-const SPEED_BOOST_FACTOR = 1.06;
-const MAX_SPEED = SPEED * 5;
-let winnerColor = null;
-let winnerHue = null;
-
-function capSpeed(b) {
-  const s = Math.hypot(b.vx, b.vy);
-  if (s > MAX_SPEED) {
-    b.vx = (b.vx / s) * MAX_SPEED;
-    b.vy = (b.vy / s) * MAX_SPEED;
-  }
-}
-
-function hueToName(h) {
-  h = ((h % 360) + 360) % 360;
-  if (h < 15 || h >= 345) return 'Red';
-  if (h < 45) return 'Orange';
-  if (h < 70) return 'Yellow';
-  if (h < 170) return 'Green';
-  if (h < 200) return 'Cyan';
-  if (h < 260) return 'Blue';
-  if (h < 290) return 'Purple';
-  return 'Pink';
-}
-
-function declareWinner(winner) {
-  finished = true;
-  for (const b of balls) {
-    if (b !== winner) b.alive = false;
-  }
-  winnerColor = winner.color;
-  winnerHue = winner.hue;
-  statusEl.style.color = '#fff';
-  statusEl.textContent = `Winner: ${hueToName(winner.hue)}`;
-  playVictorySound();
+function polygonName(n) {
+  if (SPECIAL[n]) return SPECIAL[n];
+  const tens = Math.floor(n / 10) * 10;
+  const units = n % 10;
+  return (UNITS[units] + (TENS[tens] || '') + 'gon');
 }
 
 function dist(x1, y1, x2, y2) {
@@ -230,244 +169,165 @@ function pointToSegmentDist(px, py, x1, y1, x2, y2) {
   return dist(px, py, x1 + t * dx, y1 + t * dy);
 }
 
-function randColorFromHue(h) {
-  return `hsl(${h}, 85%, 58%)`;
-}
-
-function startCountdown() {
-  if (countdownTimer) clearInterval(countdownTimer);
-  phase = 'countdown';
-  titleEl.textContent = 'Choose a color';
-  let value = 3;
-  countdownEl.textContent = value;
-  countdownEl.style.display = 'block';
-
-  countdownTimer = setInterval(() => {
-    value--;
-    if (value <= 0) {
-      clearInterval(countdownTimer);
-      countdownEl.style.display = 'none';
-      titleEl.textContent = 'Which BALL will manage to survive?';
-      phase = 'running';
-      gameStartTime = Date.now();
-    } else {
-      countdownEl.textContent = value;
-    }
-  }, 1000);
+function segmentNormal(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  // Normale zeigt nach "innen" (Richtung Trichtermitte / oben)
+  return { nx: -dy / len, ny: dx / len };
 }
 
 function init() {
-  balls = [];
-  lines = [];
+  started = false;
   finished = false;
-  gameStartTime = null;
-  winnerColor = null;
-  winnerHue = null;
   statusEl.textContent = '';
+  shape = {
+    x: gapCenterX,
+    y: box.top + 20,
+    vx: (Math.random() - 0.5) * 2,
+    vy: 0,
+    r: START_RADIUS,
+    sides: 3,
+    value: START_VALUE,
+    rotation: 0
+  };
+  nameEl.textContent = polygonName(shape.sides);
+  valueEl.textContent = shape.value.toFixed(2);
 
-  // 8 Bälle gleichmäßig verteilt an der Wand
-  for (let i = 0; i < NUM_BALLS; i++) {
-    const angle = (i / NUM_BALLS) * Math.PI * 2;
-    const x = circle.cx + Math.cos(angle) * (circle.r - BALL_RADIUS);
-    const y = circle.cy + Math.sin(angle) * (circle.r - BALL_RADIUS);
-
-    // Richtung: nach innen mit leichtem zufälligem Winkel-Offset
-    const inward = angle + Math.PI + (Math.random() - 0.5) * 0.9;
-    const hue = Math.floor((360 / NUM_BALLS) * i + Math.random() * 20);
-
-    balls.push({
-      id: i,
-      x, y,
-      vx: Math.cos(inward) * SPEED,
-      vy: Math.sin(inward) * SPEED,
-      r: BALL_RADIUS,
-      hue,
-      color: randColorFromHue(hue),
-      alive: true
-    });
-  }
-
-  // 136 Ankerpunkte gleichmäßig am Rand, je 17 einem Ball zugeordnet (dessen eigener Sektor)
-  for (let i = 0; i < NUM_BALLS; i++) {
-    for (let j = 0; j < LINES_PER_BALL; j++) {
-      const k = i * LINES_PER_BALL + j;
-      const angle = (k / TOTAL_LINES) * Math.PI * 2;
-      lines.push({
-        ax: circle.cx + Math.cos(angle) * circle.r,
-        ay: circle.cy + Math.sin(angle) * circle.r,
-        owner: i
-      });
-    }
-  }
-
-  startCountdown();
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'flex';
 }
 init();
 
-function update() {
-  if (finished || phase !== 'running') return;
+function startGame() {
+  if (started) return;
+  started = true;
+  const overlay = document.getElementById('start-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+document.getElementById('start-overlay').addEventListener('click', startGame);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'k' || e.key === 'K') startGame();
+});
 
-  const alive = balls.filter(b => b.alive);
-  const boostActive = alive.length <= SPEED_BOOST_THRESHOLD && alive.length > 1;
+function levelUp() {
+  shape.sides++;
+  shape.r *= SHRINK_FACTOR;
+  shape.value *= SHRINK_FACTOR;
+  nameEl.textContent = polygonName(shape.sides);
+  valueEl.textContent = shape.value.toFixed(2);
+}
 
-  for (const b of alive) {
-    b.x += b.vx;
-    b.y += b.vy;
+function handleBarCollision(bar) {
+  const d = pointToSegmentDist(shape.x, shape.y, bar.x1, bar.y1, bar.x2, bar.y2);
+  if (d < shape.r + BAR_THICKNESS / 2) {
+    const { nx, ny } = segmentNormal(bar.x1, bar.y1, bar.x2, bar.y2);
+    // sicherstellen, dass die Normale von der Leiste weg zeigt (Richtung Ball)
+    const toShapeX = shape.x - (bar.x1 + bar.x2) / 2;
+    const toShapeY = shape.y - (bar.y1 + bar.y2) / 2;
+    let nnx = nx, nny = ny;
+    if (nnx * toShapeX + nny * toShapeY < 0) { nnx = -nnx; nny = -nny; }
 
-    // Wandkollision (keine Gravitation, rein elastisch)
-    const d = dist(b.x, b.y, circle.cx, circle.cy);
-    if (d + b.r > circle.r) {
-      const nx = (b.x - circle.cx) / d;
-      const ny = (b.y - circle.cy) / d;
-      const dot = b.vx * nx + b.vy * ny;
-      b.vx -= 2 * dot * nx;
-      b.vy -= 2 * dot * ny;
-      const overlap = d + b.r - circle.r;
-      b.x -= nx * overlap;
-      b.y -= ny * overlap;
-      playCollisionSound();
-
-      if (boostActive) {
-        b.vx *= SPEED_BOOST_FACTOR;
-        b.vy *= SPEED_BOOST_FACTOR;
-        capSpeed(b);
-      }
+    const dot = shape.vx * nnx + shape.vy * nny;
+    if (dot < 0) {
+      shape.vx -= 2 * dot * nnx;
+      shape.vy -= 2 * dot * nny;
+      const overlap = shape.r + BAR_THICKNESS / 2 - d;
+      shape.x += nnx * overlap;
+      shape.y += nny * overlap;
+      levelUp();
     }
-  }
-
-  // Ball-Ball-Kollision (elastisch)
-  for (let i = 0; i < alive.length; i++) {
-    for (let j = i + 1; j < alive.length; j++) {
-      const a = alive[i], bb = alive[j];
-      const d = dist(a.x, a.y, bb.x, bb.y);
-      if (d < a.r + bb.r && d > 0) {
-        const nx = (bb.x - a.x) / d;
-        const ny = (bb.y - a.y) / d;
-        const dvx = bb.vx - a.vx;
-        const dvy = bb.vy - a.vy;
-        const rel = dvx * nx + dvy * ny;
-        if (rel < 0) {
-          a.vx += rel * nx;
-          a.vy += rel * ny;
-          bb.vx -= rel * nx;
-          bb.vy -= rel * ny;
-          const overlap = (a.r + bb.r - d) / 2;
-          a.x -= nx * overlap;
-          a.y -= ny * overlap;
-          bb.x += nx * overlap;
-          bb.y += ny * overlap;
-          playCollisionSound();
-
-          if (boostActive) {
-            a.vx *= SPEED_BOOST_FACTOR;
-            a.vy *= SPEED_BOOST_FACTOR;
-            bb.vx *= SPEED_BOOST_FACTOR;
-            bb.vy *= SPEED_BOOST_FACTOR;
-            capSpeed(a);
-            capSpeed(bb);
-          }
-        }
-      }
-    }
-  }
-
-  // Linien klauen: berührt ein Ball die Linie eines anderen, wechselt sie den Besitzer
-  const byId = {};
-  for (const b of alive) byId[b.id] = b;
-
-  for (const line of lines) {
-    const owner = byId[line.owner];
-    const ox = owner ? owner.x : line.ax;
-    const oy = owner ? owner.y : line.ay;
-
-    for (const b of alive) {
-      if (b.id === line.owner) continue;
-      const d = pointToSegmentDist(b.x, b.y, line.ax, line.ay, ox, oy);
-      if (d <= b.r + CAPTURE_MARGIN) {
-        line.owner = b.id;
-        break;
-      }
-    }
-  }
-
-  // Sterbe-Check: 0 Linien = tot
-  const lineCounts = {};
-  for (const b of balls) lineCounts[b.id] = 0;
-  for (const line of lines) lineCounts[line.owner]++;
-
-  for (const b of balls) {
-    if (b.alive && lineCounts[b.id] === 0) {
-      b.alive = false;
-      playDeathSound();
-    }
-  }
-
-  const remaining = balls.filter(b => b.alive);
-
-  // 70-Sekunden-Gesamtlimit: steht bis dahin kein Sieger fest, wird zufällig einer bestimmt
-  if (!finished && remaining.length > 1 && gameStartTime !== null && Date.now() - gameStartTime >= TOTAL_TIME_LIMIT) {
-    const winner = remaining[Math.floor(Math.random() * remaining.length)];
-    declareWinner(winner);
-    return;
-  }
-
-  if (remaining.length === 1 && !finished) {
-    declareWinner(remaining[0]);
-  } else if (remaining.length === 0 && !finished) {
-    finished = true;
-    statusEl.textContent = 'All balls have been eliminated!';
-    statusEl.style.color = '#fff';
-  } else if (!finished) {
-    statusEl.textContent = `Still in the race: ${remaining.length}`;
-    statusEl.style.color = '#fff';
   }
 }
+
+const MAX_SPEED = 14;
+const SUBSTEPS = 6;
+
+function moveAndCollideStep() {
+  shape.x += shape.vx / SUBSTEPS;
+  shape.y += shape.vy / SUBSTEPS;
+
+  // Seiten-/Deckenwände
+  if (shape.x - shape.r < box.left) {
+    shape.x = box.left + shape.r;
+    shape.vx *= -1;
+  } else if (shape.x + shape.r > box.right) {
+    shape.x = box.right - shape.r;
+    shape.vx *= -1;
+  }
+  if (shape.y - shape.r < box.top) {
+    shape.y = box.top + shape.r;
+    shape.vy *= -1;
+  }
+
+  // Trichterbalken: immer aktiv - die Geometrie sorgt selbst dafür,
+  // dass die Form nur durchfällt, wenn sie wirklich in der Lücke sitzt
+  handleBarCollision(leftBar);
+  handleBarCollision(rightBar);
+}
+
+function update() {
+  if (!started || finished) return;
+
+  shape.vy += GRAVITY;
+
+  const speed = Math.hypot(shape.vx, shape.vy);
+  if (speed > MAX_SPEED) {
+    shape.vx = (shape.vx / speed) * MAX_SPEED;
+    shape.vy = (shape.vy / speed) * MAX_SPEED;
+  }
+
+  shape.rotation += 0.01;
+
+  for (let i = 0; i < SUBSTEPS; i++) {
+    moveAndCollideStep();
+  }
+
+  // Erfolgreich durch die Lücke gefallen?
+  if (shape.y - shape.r > box.bottom) {
+    finished = true;
+    statusEl.textContent = `Escaped as a ${polygonName(shape.sides)}!`;
+    setTimeout(init, 1800);
+  }
+}
+
+function drawPolygon(x, y, r, sides, rotation) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const a = rotation + (i / sides) * Math.PI * 2;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+const SHAPE_COLORS = ['#22c55e', '#e879f9', '#eab308', '#38bdf8', '#f97316', '#a855f7', '#f43f5e'];
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Kreis
+  // Trichterbalken
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = BAR_THICKNESS;
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(circle.cx, circle.cy, circle.r, 0, Math.PI * 2);
-  if (finished && winnerColor) {
-    ctx.strokeStyle = winnerColor;
-    ctx.lineWidth = 6;
-    ctx.shadowColor = winnerColor;
-    ctx.shadowBlur = 45;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  } else {
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-  }
+  ctx.moveTo(leftBar.x1, leftBar.y1);
+  ctx.lineTo(leftBar.x2, leftBar.y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rightBar.x1, rightBar.y1);
+  ctx.lineTo(rightBar.x2, rightBar.y2);
+  ctx.stroke();
 
-  const byId = {};
-  for (const b of balls) byId[b.id] = b;
-
-  // Linien
-  ctx.lineWidth = 1;
-  for (const line of lines) {
-    const owner = byId[line.owner];
-    if (!owner || !owner.alive) continue;
-    ctx.beginPath();
-    ctx.moveTo(line.ax, line.ay);
-    ctx.lineTo(owner.x, owner.y);
-    ctx.strokeStyle = `hsla(${owner.hue}, 85%, 60%, 0.4)`;
-    ctx.stroke();
-  }
-
-  // Bälle
-  for (const b of balls) {
-    if (!b.alive) continue;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fillStyle = b.color;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
+  // Form
+  const color = SHAPE_COLORS[(shape.sides - 3) % SHAPE_COLORS.length];
+  drawPolygon(shape.x, shape.y, shape.r, shape.sides, shape.rotation);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = 3;
+  ctx.stroke();
 }
 
 function loop() {
