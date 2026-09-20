@@ -2,371 +2,406 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Shrinking Polygon Funnel</title>
+<title>Male Ball vs Female Ball</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
-    background: #faf3e0;
+    background: #e9ddc4;
     overflow: hidden;
     height: 100%;
-    font-family: 'Arial Black', Arial, sans-serif;
+    font-family: 'Segoe UI', Arial, sans-serif;
   }
   #wrap {
     position: relative;
     width: 100vw;
     height: 100vh;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-  }
-  canvas {
-    display: block;
-  }
-  #shapeName {
-    position: relative;
-    margin-top: 4%;
-    color: #111;
-    font-weight: 900;
-    font-size: clamp(22px, 6vw, 34px);
-    text-align: center;
-    text-transform: lowercase;
-  }
-  #shapeValue {
-    position: relative;
-    margin-top: 0.2%;
-    color: #111;
-    font-weight: 900;
-    font-size: clamp(18px, 4.5vw, 26px);
-    text-align: center;
-  }
-  #canvas-wrap {
-    position: relative;
-    display: flex;
     align-items: center;
     justify-content: center;
-    margin-top: 1%;
   }
+  #canvas-wrap { position: relative; }
+  canvas { display: block; background: #e9ddc4; }
   #start-overlay {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #fff;
-    font-weight: 900;
-    font-size: clamp(18px, 4.5vw, 28px);
-    text-align: center;
-    background: rgba(0,0,0,0.75);
-    padding: 14px 22px;
-    border-radius: 14px;
-    user-select: none;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    line-height: 1.3;
-    cursor: pointer;
-    z-index: 10;
-  }
-  #status {
-    position: relative;
-    margin-top: 2%;
-    color: #4caf1e;
-    font-weight: 800;
-    font-size: 18px;
-    text-align: center;
-    min-height: 24px;
-  }
-  #restart {
-    position: relative;
-    margin-top: 2%;
-    background: #17b3d4;
+    background: rgba(0,0,0,0.55);
     color: #fff;
-    border: none;
-    padding: 8px 18px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: clamp(18px, 4.5vw, 26px);
+    font-weight: 800;
     cursor: pointer;
+    text-align: center;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+    user-select: none;
   }
-  #restart:hover { background: #12a0be; }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="shapeName">triangle</div>
-  <div id="shapeValue">565.00</div>
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
-    <div id="start-overlay">Press K<br>to start</div>
+    <div id="start-overlay">Tap to start<br><span style="font-size:0.6em; opacity:0.85;">(oder K dr\u00fccken)</span></div>
   </div>
-  <div id="status"></div>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const nameEl = document.getElementById('shapeName');
-const valueEl = document.getElementById('shapeValue');
-const statusEl = document.getElementById('status');
 
-function size() {
-  const reserved = 230;
-  const s = Math.min(window.innerWidth * 0.92, window.innerHeight - reserved);
-  canvas.width = s;
-  canvas.height = s;
+const W = 480;
+const LABEL_H = 36;
+const ARENA_H = 210;
+const BAR_H = 44;
+const CHECKER_H = 14;
+const VS_H = 40;
+
+const TOP_LABEL_Y0 = 0;
+const TOP_LABEL_Y1 = LABEL_H;
+const TOP_ARENA_Y0 = TOP_LABEL_Y1;
+const TOP_ARENA_Y1 = TOP_ARENA_Y0 + ARENA_H;
+const TOP_BAR_Y0 = [TOP_ARENA_Y1, TOP_ARENA_Y1 + BAR_H, TOP_ARENA_Y1 + BAR_H * 2];
+const TOP_BAR_Y1 = TOP_BAR_Y0.map(y => y + BAR_H);
+const TOP_CHECKER_Y0 = TOP_BAR_Y1[2];
+const TOP_CHECKER_Y1 = TOP_CHECKER_Y0 + CHECKER_H;
+
+const VS_Y0 = TOP_CHECKER_Y1;
+const VS_Y1 = VS_Y0 + VS_H;
+
+const BOT_LABEL_Y0 = VS_Y1;
+const BOT_LABEL_Y1 = BOT_LABEL_Y0 + LABEL_H;
+const BOT_ARENA_Y0 = BOT_LABEL_Y1;
+const BOT_ARENA_Y1 = BOT_ARENA_Y0 + ARENA_H;
+const BOT_BAR_Y0 = [BOT_ARENA_Y1, BOT_ARENA_Y1 + BAR_H, BOT_ARENA_Y1 + BAR_H * 2];
+const BOT_BAR_Y1 = BOT_BAR_Y0.map(y => y + BAR_H);
+const BOT_CHECKER_Y0 = BOT_BAR_Y1[2];
+const BOT_CHECKER_Y1 = BOT_CHECKER_Y0 + CHECKER_H;
+
+const H = BOT_CHECKER_Y1;
+
+canvas.width = W;
+canvas.height = H;
+
+function resize() {
+  const availW = window.innerWidth;
+  const availH = window.innerHeight;
+  const scale = Math.min(availW / W, availH / H, 1) * 0.94;
+  canvas.style.width = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
 }
-size();
+window.addEventListener('resize', resize);
+resize();
 
-const box = { left: 4, right: canvas.width - 4, top: 4, bottom: canvas.height - 4 };
+const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
+const TOP_COLOR = '#CE1141';  // Jordan Ball - Rot
+const BOT_COLOR = '#FDB927';  // LeBron Ball - Lakers Gelb
+const GRAVITY = 0.22;
+const MAX_FALL_SPEED = 30;
+const BOUNCE_VY = 9;
+const SLOWDOWN = 0.8;
+const MIN_SLOWMO = 0.01;
+const BALL_SPEED = 3.2;
 
-const GAP_WIDTH = canvas.width * 0.1;
-const FUNNEL_TOP_Y = box.top + (box.bottom - box.top) * 0.62;
-const gapCenterX = (box.left + box.right) / 2;
-
-// Trichterbalken: von den oberen Ecken des Trichterbereichs runter zur Lücke am Boden
-const leftBar = {
-  x1: box.left, y1: FUNNEL_TOP_Y,
-  x2: gapCenterX - GAP_WIDTH / 2, y2: box.bottom
-};
-const rightBar = {
-  x1: box.right, y1: FUNNEL_TOP_Y,
-  x2: gapCenterX + GAP_WIDTH / 2, y2: box.bottom
-};
-
-const START_RADIUS = canvas.width * 0.26;
-const START_VALUE = 565.00;
-const SHRINK_FACTOR = 0.92;
-const GRAVITY = 0.28;
-const BAR_THICKNESS = 10;
-
-let shape = null;
-let started = false;
-let finished = false;
-
-// --- Polygon-Namen (units + tens + "gon", nach dem gleichen Schema wie "tetrahexacontagon") ---
-const UNITS = ['', 'hena', 'di', 'tri', 'tetra', 'penta', 'hexa', 'hepta', 'octa', 'ennea'];
-const TENS = { 0: '', 10: 'deca', 20: 'icosa', 30: 'triaconta', 40: 'tetraconta', 50: 'pentaconta', 60: 'hexaconta', 70: 'heptaconta', 80: 'octaconta', 90: 'enneaconta' };
-const SPECIAL = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'nonagon', 10: 'decagon', 11: 'hendecagon', 12: 'dodecagon' };
-
-function polygonName(n) {
-  if (SPECIAL[n]) return SPECIAL[n];
-  const tens = Math.floor(n / 10) * 10;
-  const units = n % 10;
-  return (UNITS[units] + (TENS[tens] || '') + 'gon');
-}
-
-function dist(x1, y1, x2, y2) {
-  return Math.hypot(x1 - x2, y1 - y2);
-}
-
-function pointToSegmentDist(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return dist(px, py, x1, y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return dist(px, py, x1 + t * dx, y1 + t * dy);
-}
-
-function segmentNormal(x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const len = Math.hypot(dx, dy);
-  // Normale zeigt nach "innen" (Richtung Trichtermitte / oben)
-  return { nx: -dy / len, ny: dx / len };
-}
-
-// --- Sound Engine (Web Audio API) ---
 let audioCtx = null;
 function ensureAudio() {
   if (!audioCtx) {
-    try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) { /* Audio nicht verfügbar */ }
-  }
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-  if (audioCtx) {
-    const unlockOsc = audioCtx.createOscillator();
-    const unlockGain = audioCtx.createGain();
-    unlockGain.gain.value = 0;
-    unlockOsc.connect(unlockGain);
-    unlockGain.connect(audioCtx.destination);
-    unlockOsc.start();
-    unlockOsc.stop(audioCtx.currentTime + 0.01);
-  }
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) {}
+  } else if (audioCtx.state === 'suspended') audioCtx.resume();
 }
-
-function playBarSound() {
+function beep(freq, dur, type, vol) {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(400 + Math.random() * 200, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08);
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol || 0.13, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.08);
+  osc.stop(audioCtx.currentTime + dur);
 }
-// --- Ende Sound Engine ---
+function topHitSound(n) { beep(300 + n * 6, 0.16, 'triangle', 0.14); }
+function botHitSound(n) { beep(220 + n * 5, 0.16, 'sine', 0.14); }
+
+let topBall, botBall, topBars, botBars, topHitCount, botHitCount, popups, gameOver, started;
+
+function fibonacci(n) {
+  let a = 1, b = 1;
+  if (n <= 2) return 1;
+  for (let i = 3; i <= n; i++) {
+    const c = a + b;
+    a = b;
+    b = c;
+  }
+  return b;
+}
+function factorial(n) {
+  let r = 1;
+  for (let i = 2; i <= n; i++) r *= i;
+  return r;
+}
+function doubling(n) {
+  if (n <= 1) return 1;
+  return Math.pow(2, n - 1);
+}
+function jordanDamage(n) {
+  return 32292 * Math.pow(6, Math.floor((n - 1) / 5));
+}
+function lebronDamage(n) {
+  return 43440 * Math.pow(4, Math.floor((n - 1) / 5));
+}
+
+function applyDamage(bars, dmg) {
+  for (let i = 0; i < bars.length; i++) {
+    if (bars[i] > 0) {
+      bars[i] -= dmg;
+      if (bars[i] < 0) bars[i] = 0;
+      return;
+    }
+  }
+}
+function isFullyDepleted(bars) { return bars.every(h => h <= 0); }
+function getActiveBarIndex(bars) {
+  for (let i = 0; i < bars.length; i++) if (bars[i] > 0) return i;
+  return bars.length;
+}
 
 function init() {
-  started = false;
-  finished = false;
-  statusEl.textContent = '';
-  shape = {
-    x: gapCenterX,
-    y: box.top + 20,
-    vx: (Math.random() - 0.5) * 2,
-    vy: 0,
-    r: START_RADIUS,
-    sides: 3,
-    value: START_VALUE,
-    rotation: 0
+  const tAngle = Math.random() * Math.PI * 2;
+  topBall = {
+    x: W / 2,
+    y: TOP_ARENA_Y0 + ARENA_H / 2,
+    vx: Math.cos(tAngle) * BALL_SPEED,
+    vy: Math.sin(tAngle) * BALL_SPEED,
+    r: 16,
   };
-  nameEl.textContent = polygonName(shape.sides);
-  valueEl.textContent = shape.value.toFixed(2);
+  const bAngle = Math.random() * Math.PI * 2;
+  botBall = {
+    x: W / 2,
+    y: BOT_ARENA_Y0 + ARENA_H / 2,
+    vx: Math.cos(bAngle) * BALL_SPEED,
+    vy: Math.sin(bAngle) * BALL_SPEED,
+    r: 16,
+  };
+  topBars = BAR_HEALTHS.slice();
+  botBars = BAR_HEALTHS.slice();
+  topHitCount = 0;
+  botHitCount = 0;
+  popups = [];
+  gameOver = false;
+  started = false;
 
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'flex';
+  document.getElementById('start-overlay').style.display = 'flex';
 }
-init();
 
 function startGame() {
   if (started) return;
   ensureAudio();
+  // Stumm anspielen, um Autoplay-Sperre früh zu lösen (iOS/Chrome)
   started = true;
-  const overlay = document.getElementById('start-overlay');
-  if (overlay) overlay.style.display = 'none';
+  document.getElementById('start-overlay').style.display = 'none';
 }
 document.getElementById('start-overlay').addEventListener('click', startGame);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'k' || e.key === 'K') startGame();
-});
+document.addEventListener('keydown', (e) => { if (e.key === 'k' || e.key === 'K') startGame(); });
 
-function levelUp() {
-  shape.sides++;
-  shape.r *= SHRINK_FACTOR;
-  shape.value *= SHRINK_FACTOR;
-  nameEl.textContent = polygonName(shape.sides);
-  valueEl.textContent = shape.value.toFixed(2);
-}
-
-function handleBarCollision(bar) {
-  const d = pointToSegmentDist(shape.x, shape.y, bar.x1, bar.y1, bar.x2, bar.y2);
-  if (d < shape.r + BAR_THICKNESS / 2) {
-    const { nx, ny } = segmentNormal(bar.x1, bar.y1, bar.x2, bar.y2);
-    // sicherstellen, dass die Normale von der Leiste weg zeigt (Richtung Ball)
-    const toShapeX = shape.x - (bar.x1 + bar.x2) / 2;
-    const toShapeY = shape.y - (bar.y1 + bar.y2) / 2;
-    let nnx = nx, nny = ny;
-    if (nnx * toShapeX + nny * toShapeY < 0) { nnx = -nnx; nny = -nny; }
-
-    const dot = shape.vx * nnx + shape.vy * nny;
-    if (dot < 0) {
-      shape.vx -= 2 * dot * nnx;
-      shape.vy -= 2 * dot * nny;
-      const overlap = shape.r + BAR_THICKNESS / 2 - d;
-      shape.x += nnx * overlap;
-      shape.y += nny * overlap;
-      playBarSound();
-      levelUp();
-    }
-  }
-}
-
-const MAX_SPEED = 14;
-const SUBSTEPS = 6;
-
-function moveAndCollideStep() {
-  shape.x += shape.vx / SUBSTEPS;
-  shape.y += shape.vy / SUBSTEPS;
-
-  // Seiten-/Deckenwände
-  if (shape.x - shape.r < box.left) {
-    shape.x = box.left + shape.r;
-    shape.vx *= -1;
-  } else if (shape.x + shape.r > box.right) {
-    shape.x = box.right - shape.r;
-    shape.vx *= -1;
-  }
-  if (shape.y - shape.r < box.top) {
-    shape.y = box.top + shape.r;
-    shape.vy *= -1;
-  }
-
-  // Trichterbalken: immer aktiv - die Geometrie sorgt selbst dafür,
-  // dass die Form nur durchfällt, wenn sie wirklich in der Lücke sitzt
-  handleBarCollision(leftBar);
-  handleBarCollision(rightBar);
-}
+function addPopup(x, y, text, color) { popups.push({ x, y, text, color, age: 0 }); }
 
 function update() {
-  if (!started || finished) return;
+  if (!started || gameOver) return;
 
-  shape.vy += GRAVITY;
-
-  const speed = Math.hypot(shape.vx, shape.vy);
-  if (speed > MAX_SPEED) {
-    shape.vx = (shape.vx / speed) * MAX_SPEED;
-    shape.vy = (shape.vy / speed) * MAX_SPEED;
+  // Jordan Ball (oben): konstante Geschwindigkeit, Jordan-Schaden
+  const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
+  const tx0 = 12, tx1 = W - 12, ty0 = TOP_ARENA_Y0 + 10, ty1 = topFloor - 10;
+  topBall.vy += GRAVITY;
+  if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
+  topBall.x += topBall.vx;
+  topBall.y += topBall.vy;
+  if (topBall.x - topBall.r < tx0) { topBall.x = tx0 + topBall.r; topBall.vx *= -1; }
+  if (topBall.x + topBall.r > tx1) { topBall.x = tx1 - topBall.r; topBall.vx *= -1; }
+  if (topBall.y - topBall.r < ty0) { topBall.y = ty0 + topBall.r; topBall.vy *= -1; }
+  if (topBall.y + topBall.r > ty1) {
+    topBall.y = ty1 - topBall.r;
+    if (!isFullyDepleted(topBars)) {
+      topHitCount++;
+      topBall.vy = -BOUNCE_VY;
+      const dmg = jordanDamage(topHitCount);
+      applyDamage(topBars, dmg);
+      addPopup(topBall.x, topBall.y, '-' + dmg.toLocaleString('de-DE'), TOP_COLOR);
+      if (getActiveBarIndex(topBars) >= 1) topHitSound(topHitCount);
+    } else {
+      topBall.vy = 0;
+      if (!gameOver) gameOver = true;
+    }
   }
 
-  shape.rotation += 0.01;
-
-  for (let i = 0; i < SUBSTEPS; i++) {
-    moveAndCollideStep();
+  // Messi (unten): normale Physik, Fibonacci-Schaden
+  const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
+  const bx0 = 12, bx1 = W - 12, by0 = BOT_ARENA_Y0 + 10, by1 = botFloor - 10;
+  const LEBRON_SPEED_MULT = 1.3;
+  botBall.vy += GRAVITY * LEBRON_SPEED_MULT;
+  if (botBall.vy > MAX_FALL_SPEED * LEBRON_SPEED_MULT) botBall.vy = MAX_FALL_SPEED * LEBRON_SPEED_MULT;
+  botBall.x += botBall.vx * LEBRON_SPEED_MULT;
+  botBall.y += botBall.vy;
+  if (botBall.x - botBall.r < bx0) { botBall.x = bx0 + botBall.r; botBall.vx *= -1; }
+  if (botBall.x + botBall.r > bx1) { botBall.x = bx1 - botBall.r; botBall.vx *= -1; }
+  if (botBall.y - botBall.r < by0) { botBall.y = by0 + botBall.r; botBall.vy *= -1; }
+  if (botBall.y + botBall.r > by1) {
+    botBall.y = by1 - botBall.r;
+    if (!isFullyDepleted(botBars)) {
+      botBall.vy = -BOUNCE_VY * LEBRON_SPEED_MULT;
+      botHitCount++;
+      const dmg = lebronDamage(botHitCount);
+      applyDamage(botBars, dmg);
+      addPopup(botBall.x, botBall.y, '-' + dmg.toLocaleString('de-DE'), BOT_COLOR);
+      botHitSound(botHitCount);
+    } else {
+      botBall.vy = 0;
+      if (!gameOver) {
+        gameOver = true;
+        beep(180, 0.5, 'sawtooth', 0.18);
+      }
+    }
   }
 
-  // Erfolgreich durch die Lücke gefallen?
-  if (shape.y - shape.r > box.bottom) {
-    finished = true;
-    statusEl.textContent = `Escaped as a ${polygonName(shape.sides)}!`;
-    setTimeout(init, 1800);
+  for (let i = popups.length - 1; i >= 0; i--) {
+    popups[i].age++;
+    if (popups[i].age > 40) popups.splice(i, 1);
   }
 }
 
-function drawPolygon(x, y, r, sides, rotation) {
-  ctx.beginPath();
-  for (let i = 0; i < sides; i++) {
-    const a = rotation + (i / sides) * Math.PI * 2;
-    const px = x + Math.cos(a) * r;
-    const py = y + Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
+function drawChecker(y0, y1) {
+  const sq = 12;
+  let flip = false;
+  for (let x = 0; x < W; x += sq) {
+    ctx.fillStyle = flip ? '#fff' : '#000';
+    ctx.fillRect(x, y0, sq, y1 - y0);
+    flip = !flip;
   }
-  ctx.closePath();
+}
+function drawArenaBg(y0, y1) {
+  ctx.fillStyle = '#fdfaf2';
+  ctx.fillRect(0, y0, W, y1 - y0);
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, y0 + 1.5, W - 3, (y1 - y0) - 3);
 }
 
-const SHAPE_COLORS = ['#22c55e', '#e879f9', '#eab308', '#38bdf8', '#f97316', '#a855f7', '#f43f5e'];
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Trichterbalken
-  ctx.strokeStyle = '#111111';
-  ctx.lineWidth = BAR_THICKNESS;
-  ctx.lineCap = 'round';
+function drawSymbolBall(x, y, r, color, symbol) {
   ctx.beginPath();
-  ctx.moveTo(leftBar.x1, leftBar.y1);
-  ctx.lineTo(leftBar.x2, leftBar.y2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(rightBar.x1, rightBar.y1);
-  ctx.lineTo(rightBar.x2, rightBar.y2);
-  ctx.stroke();
-
-  // Form
-  const color = SHAPE_COLORS[(shape.sides - 3) % SHAPE_COLORS.length];
-  drawPolygon(shape.x, shape.y, shape.r, shape.sides, shape.rotation);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.strokeStyle = '#111111';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#000';
   ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '900 ' + Math.round(r * 1.3) + 'px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(symbol, x, y + 1);
+}
+
+function drawHealthBar(y0, y1, bg, health) {
+  if (health <= 0) {
+    ctx.fillStyle = '#e9ddc4';
+    ctx.fillRect(0, y0, W, y1 - y0);
+    return;
+  }
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, y0, W, y1 - y0);
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, y0 + 1, W - 2, (y1 - y0) - 2);
+  ctx.fillStyle = '#fff';
+  ctx.font = '900 20px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(Math.max(0, Math.round(health)).toLocaleString('de-DE'), W / 2, (y0 + y1) / 2);
+}
+function drawSideBars(bars, arenaY1orig, color) {
+  const activeIdx = getActiveBarIndex(bars);
+  const floor = arenaY1orig + activeIdx * BAR_H;
+  for (let i = activeIdx; i < bars.length; i++) {
+    const y0 = floor + (i - activeIdx) * BAR_H;
+    drawHealthBar(y0, y0 + BAR_H, color, bars[i]);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#e9ddc4';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = TOP_COLOR;
+  ctx.font = '900 20px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('JORDAN BALL', W / 2, LABEL_H / 2);
+
+  const topActiveIdx = getActiveBarIndex(topBars);
+  const topFloorY = TOP_ARENA_Y1 + topActiveIdx * BAR_H;
+  drawArenaBg(TOP_ARENA_Y0, topFloorY);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, TOP_ARENA_Y0, W, topFloorY - TOP_ARENA_Y0);
+  ctx.clip();
+  drawSymbolBall(topBall.x, topBall.y, topBall.r, TOP_COLOR, '23');
+  for (const p of popups) {
+    if (p.color !== TOP_COLOR) continue;
+    ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
+    ctx.fillStyle = TOP_COLOR;
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 12px Arial';
+  ctx.fillStyle = TOP_COLOR;
+  ctx.fillText('DAMAGE: ' + jordanDamage(topHitCount + 1).toLocaleString('de-DE'), 12, TOP_ARENA_Y0 + 14);
+
+  drawSideBars(topBars, TOP_ARENA_Y1, TOP_COLOR);
+  drawChecker(TOP_CHECKER_Y0, TOP_CHECKER_Y1);
+
+  ctx.fillStyle = '#111';
+  ctx.font = '900 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
+
+  ctx.fillStyle = BOT_COLOR;
+  ctx.font = '900 20px Arial';
+  ctx.fillText('LEBRON BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
+
+  const botActiveIdx = getActiveBarIndex(botBars);
+  const botFloorY = BOT_ARENA_Y1 + botActiveIdx * BAR_H;
+  drawArenaBg(BOT_ARENA_Y0, botFloorY);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, BOT_ARENA_Y0, W, botFloorY - BOT_ARENA_Y0);
+  ctx.clip();
+  drawSymbolBall(botBall.x, botBall.y, botBall.r, BOT_COLOR, '6');
+  for (const p of popups) {
+    if (p.color !== BOT_COLOR) continue;
+    ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
+    ctx.fillStyle = BOT_COLOR;
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 12px Arial';
+  ctx.fillStyle = BOT_COLOR;
+  ctx.fillText('DAMAGE: ' + lebronDamage(botHitCount + 1).toLocaleString('de-DE'), 12, BOT_ARENA_Y0 + 14);
+
+  drawSideBars(botBars, BOT_ARENA_Y1, BOT_COLOR);
+  drawChecker(BOT_CHECKER_Y0, BOT_CHECKER_Y1);
 }
 
 function loop() {
@@ -374,11 +409,9 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
-loop();
 
-document.getElementById('wrap').insertAdjacentHTML('beforeend',
-  '<button id="restart">Neu starten</button>');
-document.getElementById('restart').addEventListener('click', init);
+init();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
