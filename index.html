@@ -111,7 +111,7 @@ function init() {
     minions.push({
       x: W / 2 + Math.cos(angle) * 120,
       y: ARENA_Y0 + ARENA_H / 2 + Math.sin(angle) * 100,
-      vx: Math.cos(angle + 1) * BALL_SPEED, vy: Math.sin(angle + 1) * BALL_SPEED,
+      vx: Math.cos(angle + 1) * BALL_SPEED * 2.0, vy: Math.sin(angle + 1) * BALL_SPEED * 2.0,
       r: 15, hp: MINION_HP_MAX, hitCount: 0, alive: true, id: i + 1, bossHits: 0,
     });
   }
