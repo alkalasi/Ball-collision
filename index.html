@@ -54,8 +54,8 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-const BOSS_HP_MAX = 1000000;
-const MINION_HP_MAX = 500000;
+const BOSS_HP_MAX = 50000;
+const MINION_HP_MAX = 100000;
 const BOSS_COLOR = '#C9A15C';
 const MINION_COLOR = '#5AA9E6';
 const BALL_SPEED = 2.6;
@@ -88,10 +88,12 @@ function fibonacci(n) {
   for (let i = 3; i <= n; i++) { const c = a + b; a = b; b = c; }
   return b;
 }
-function factorial(n) {
-  let r = 1;
-  for (let i = 2; i <= n; i++) r *= i;
-  return r;
+function lucas(n) {
+  let a = 2, b = 1;
+  if (n === 0) return 2;
+  if (n === 1) return 1;
+  for (let i = 2; i <= n; i++) { const c = a + b; a = b; b = c; }
+  return b;
 }
 
 let boss, minions, bossHp, bossHitCount, popups, gameOver, started, winner;
@@ -110,7 +112,7 @@ function init() {
       x: W / 2 + Math.cos(angle) * 120,
       y: ARENA_Y0 + ARENA_H / 2 + Math.sin(angle) * 100,
       vx: Math.cos(angle + 1) * BALL_SPEED, vy: Math.sin(angle + 1) * BALL_SPEED,
-      r: 15, hp: MINION_HP_MAX, hitCount: 0, alive: true, id: i + 1,
+      r: 15, hp: MINION_HP_MAX, hitCount: 0, alive: true, id: i + 1, bossHits: 0,
     });
   }
   bossHp = BOSS_HP_MAX;
@@ -165,7 +167,7 @@ function update() {
 
       if (bossHp > 0) {
         bossHitCount++;
-        const bossDmg = fibonacci(bossHitCount);
+        const bossDmg = 100 * bossHitCount;
         m.hp -= bossDmg;
         addPopup(m.x, m.y, '-' + bossDmg.toLocaleString('de-DE'), BOSS_COLOR);
         bossHitSound(bossHitCount);
@@ -174,7 +176,7 @@ function update() {
 
       if (bossHp > 0) {
         m.hitCount++;
-        const minionDmg = factorial(m.hitCount);
+        const minionDmg = fibonacci(m.hitCount);
         bossHp = Math.max(0, bossHp - minionDmg);
         addPopup(boss.x, boss.y - 20, '-' + minionDmg.toLocaleString('de-DE'), MINION_COLOR);
         minionHitSound(m.hitCount);
@@ -219,15 +221,19 @@ function drawChecker(y0, y1) {
 }
 function drawBossBar() {
   const alive = bossHp > 0;
-  ctx.fillStyle = alive ? BOSS_COLOR : '#e9ddc4';
+  const pct = alive ? Math.max(0, bossHp) / BOSS_HP_MAX : 0;
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
   ctx.fillRect(0, BOSS_BAR_Y0, W, BOSS_BAR_H);
+  if (alive) {
+    ctx.fillStyle = BOSS_COLOR;
+    ctx.fillRect(0, BOSS_BAR_Y0, W * pct, BOSS_BAR_H);
+  }
   ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
   ctx.strokeRect(1, BOSS_BAR_Y0 + 1, W - 2, BOSS_BAR_H - 2);
-  if (alive) {
-    ctx.fillStyle = '#fff'; ctx.font = '900 18px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('BOSS: ' + Math.max(0, Math.round(bossHp)).toLocaleString('de-DE'), W / 2, BOSS_BAR_Y0 + BOSS_BAR_H / 2);
-  }
+  ctx.fillStyle = alive ? '#fff' : '#000';
+  ctx.font = '900 18px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('BOSS: ' + Math.max(0, Math.round(bossHp)).toLocaleString('de-DE'), W / 2, BOSS_BAR_Y0 + BOSS_BAR_H / 2);
 }
 function drawMinionBars() {
   const n = minions.length;
@@ -251,13 +257,39 @@ function drawMinionBars() {
     ctx.fillText(alive ? ('#' + m.id + ': ' + Math.max(0, Math.round(m.hp)).toLocaleString('de-DE')) : ('#' + m.id + ': X'), x0 + segW / 2, MINION_BAR_Y0 + MINION_BAR_H / 2);
   }
 }
-function drawBall(ball, r, color, label) {
+function drawFibonacciSpiral(cx, cy, r) {
+  // Goldene Spirale aus Viertelkreisen mit abnehmendem Radius (Fibonacci-Verhältnis)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = Math.max(1.5, r * 0.045);
+  const phi = 1.618;
+  let size = r * 0.62;
+  let x = cx, y = cy;
+  let angle = 0;
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const startAngle = angle;
+    const endAngle = angle + Math.PI / 2;
+    let centerX, centerY;
+    if (i % 4 === 0) { centerX = x; centerY = y - size; }
+    else if (i % 4 === 1) { centerX = x - size; centerY = y; }
+    else if (i % 4 === 2) { centerX = x; centerY = y + size; }
+    else { centerX = x + size; centerY = y; }
+    ctx.arc(centerX, centerY, size, startAngle + Math.PI, endAngle + Math.PI, false);
+    x = centerX; y = centerY;
+    angle += Math.PI / 2;
+    size /= phi;
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+function drawBall(ball, r, color, label, labelColor) {
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, r, 0, Math.PI * 2);
   ctx.fillStyle = color; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
   if (label) {
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = labelColor || '#fff';
     ctx.font = '900 ' + Math.round(r * 0.85) + 'px Arial';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, ball.x, ball.y + 1);
@@ -271,7 +303,7 @@ function draw() {
   ctx.fillStyle = '#222'; ctx.font = '900 16px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const aliveCount = minions.filter(m => m.alive).length;
-  ctx.fillText('FIBONACCI BOSS (' + Math.max(0, bossHp).toLocaleString('de-DE') + ')  vs  ' + aliveCount + ' FACTORIAL MINIONS', W / 2, LABEL_H / 2);
+  ctx.fillText('LINEAR BOSS (' + Math.max(0, bossHp).toLocaleString('de-DE') + ')  vs  ' + aliveCount + ' FIBONACCI MINIONS', W / 2, LABEL_H / 2);
 
   drawArenaBg();
   ctx.save();
@@ -284,7 +316,7 @@ function draw() {
     ctx.textAlign = 'center';
     ctx.fillText(Math.max(0, Math.round(m.hp)).toLocaleString('de-DE'), m.x, m.y - m.r - 6);
   }
-  if (bossHp > 0) drawBall(boss, boss.r, BOSS_COLOR, '');
+  if (bossHp > 0) drawBall(boss, boss.r, BOSS_COLOR, '+100', '#000');
 
   for (const p of popups) {
     ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
