@@ -232,7 +232,7 @@ function update() {
       const dmg = factorial(topHitCount);
       applyDamage(topBars, dmg);
       addPopup(topBall.x, topBall.y, '-' + dmg.toLocaleString('de-DE'), TOP_COLOR);
-      if (getActiveBarIndex(topBars) >= 1) topHitSound(topHitCount);
+      topHitSound(topHitCount);
     } else {
       topBall.vy = 0;
       if (!gameOver) gameOver = true;
