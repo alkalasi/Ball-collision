@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Bitcoin Ball vs Gold Ball (pro Kilo)</title>
+<title>Fibonacci Ball vs Golden Ratio Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -91,64 +91,38 @@ window.addEventListener('resize', resize);
 resize();
 
 // Farben
-const TOP_COLOR = '#F7931A';  // Bitcoin Ball
-const TOP_TEXT  = '#E07B00';
-const BOT_COLOR = '#D4A017';  // Gold Ball
-const BOT_TEXT  = '#A67C00';
+const TOP_COLOR = '#3b82c4';  // Fibonacci Ball - Blau
+const BOT_COLOR = '#C9A15C';  // Golden Ratio Ball - Gold
 
-// Jeder Ball hat 3 Balken (HP), der Boden ist immer der aktive Balken. Wer zuerst alle 3 durchbricht
-// und die Ziellinie (Schachbrett) berührt, gewinnt.
-const BAR_HEALTHS = [1000, 500000, 4000000];
+// Jeder Ball hat 3 Balken (HP), der Boden ist immer der aktive Balken.
+const BAR_HEALTHS = [1000, 10000000, 100000000000];
 
-// Identische Physik für beide Bälle (~1,2 s pro Bodenkontakt -> 63 Treffer = ~75 s)
+// Identische Physik für beide Bälle
 const GRAVITY = 0.22;
 const MAX_FALL_SPEED = 30;
-const BOUNCE_VY = 7.8;
+const BOUNCE_VY = 9;
 const BALL_SPEED = 3.2;
 
-// Echte Daten: Durchschnittspreis pro Monat in USD, Jan 2021 bis Mär 2026 (1 Treffer = 1 Monat)
-// Bitcoin: Mittel der täglichen Schlusskurse (Coin Metrics, PriceUSD), Preis pro 1 BTC
-// Gold: Monatspreis pro Feinunze (datasets/gold-prices) x 32,1507 = Preis pro 1 KILO (Kilobarren)
-const MONTHS = [
-  'Jan 2021', 'Feb 2021', 'Mar 2021', 'Apr 2021', 'May 2021', 'Jun 2021', 'Jul 2021', 'Aug 2021',
-  'Sep 2021', 'Oct 2021', 'Nov 2021', 'Dec 2021', 'Jan 2022', 'Feb 2022', 'Mar 2022', 'Apr 2022',
-  'May 2022', 'Jun 2022', 'Jul 2022', 'Aug 2022', 'Sep 2022', 'Oct 2022', 'Nov 2022', 'Dec 2022',
-  'Jan 2023', 'Feb 2023', 'Mar 2023', 'Apr 2023', 'May 2023', 'Jun 2023', 'Jul 2023', 'Aug 2023',
-  'Sep 2023', 'Oct 2023', 'Nov 2023', 'Dec 2023', 'Jan 2024', 'Feb 2024', 'Mar 2024', 'Apr 2024',
-  'May 2024', 'Jun 2024', 'Jul 2024', 'Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024',
-  'Jan 2025', 'Feb 2025', 'Mar 2025', 'Apr 2025', 'May 2025', 'Jun 2025', 'Jul 2025', 'Aug 2025',
-  'Sep 2025', 'Oct 2025', 'Nov 2025', 'Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026'
-];
-const BTC_PRICES = [
-  34753, 46316, 54933, 57105, 46507, 35812, 34412, 45747,
-  45927, 57915, 60685, 49357, 41113, 40756, 41974, 41441,
-  31707, 24353, 21545, 22362, 19793, 19648, 17580, 16937,
-  20240, 23303, 25123, 28856, 27516, 27761, 30050, 27845,
-  26306, 29749, 36605, 42548, 42912, 49873, 67712, 65915,
-  65256, 65903, 62838, 59963, 60338, 65583, 86569, 98247,
-  100008, 95251, 85064, 86436, 103629, 105807, 115354, 114846,
-  113171, 114120, 96282, 88916, 90478, 68855, 69533
-];
-const GOLD_PRICES = [
-  60025, 58129, 55235, 56585, 59479, 58997, 58129, 57389,
-  57068, 57132, 58579, 57550, 58386, 59672, 62630, 62276,
-  59447, 59061, 55717, 56746, 54045, 53499, 55460, 57807,
-  61022, 59640, 61504, 64301, 64044, 62469, 62726, 61697,
-  61601, 61601, 63787, 65137, 65395, 65041, 69381, 74943,
-  75586, 74783, 77097, 79412, 82660, 86486, 85232, 85135,
-  87129, 93076, 95906, 103461, 106387, 107801, 107383, 108284,
-  117929, 130478, 131400, 138538, 152812, 161397, 156124
-];
-const YEARS = BTC_PRICES.length; // Anzahl Monate = Anzahl Treffer
-const BTC_TOTAL  = BTC_PRICES.reduce((a, b) => a + b, 0);
-const GOLD_TOTAL = GOLD_PRICES.reduce((a, b) => a + b, 0);
-function formatUsd(v) {
-  if (v < 100) return '$' + v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return '$' + Math.round(v).toLocaleString('de-DE');
+const PHI = (1 + Math.sqrt(5)) / 2; // ≈ 1,6180339887
+
+function fibonacci(n) {
+  let a = 1, b = 1;
+  if (n <= 2) return 1;
+  for (let i = 3; i <= n; i++) {
+    const c = a + b;
+    a = b;
+    b = c;
+  }
+  return b;
 }
-function formatK(v) {
-  if (v >= 1000000) return '$' + (v / 1000000).toFixed(2) + 'M';
-  return v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'K' : '$' + Math.round(v);
+// Golden-Ratio-Schaden: φ^n, aufgerundet — wächst mit fast identischer Rate wie Fibonacci
+// (fib(n) ≈ φ^n / √5), aber ohne die √5-Normierung, also durchgehend etwas stärker
+function goldenDamage(n) {
+  return Math.round(Math.pow(PHI, n));
+}
+
+function formatNum(v) {
+  return Math.round(v).toLocaleString('de-DE');
 }
 
 let audioCtx = null;
@@ -171,8 +145,8 @@ function beep(freq, dur, type, vol) {
   osc.start();
   osc.stop(audioCtx.currentTime + dur);
 }
-function topHitSound(n) { beep(320 + n * 8, 0.16, 'triangle', 0.14); }
-function botHitSound(n) { beep(220 + n * 5, 0.16, 'sine', 0.14); }
+function topHitSound(n) { beep(300 + n * 6, 0.16, 'triangle', 0.14); }
+function botHitSound(n) { beep(220 + n * 6, 0.16, 'sine', 0.14); }
 
 function applyDamage(bars, dmg) {
   for (let i = 0; i < bars.length; i++) {
@@ -190,13 +164,21 @@ function getActiveBarIndex(bars) {
 }
 
 let topBall, botBall, topBars, botBars, topHitCount, botHitCount, topDamage, botDamage;
-let popups, started, gameOver, winner, currentMonth;
+let popups, started, gameOver, winner;
 
 function init() {
-  const dirT = Math.random() < 0.5 ? -1 : 1;
-  topBall = { x: W / 2, y: TOP_ARENA_Y0 + ARENA_H / 2, vx: dirT * BALL_SPEED, vy: 0, r: 18 };
-  const dirB = Math.random() < 0.5 ? -1 : 1;
-  botBall = { x: W / 2, y: BOT_ARENA_Y0 + ARENA_H / 2, vx: dirB * BALL_SPEED, vy: 0, r: 18 };
+  const tAngle = Math.random() * Math.PI * 2;
+  topBall = {
+    x: W / 2, y: TOP_ARENA_Y0 + ARENA_H / 2,
+    vx: Math.cos(tAngle) * BALL_SPEED, vy: Math.sin(tAngle) * BALL_SPEED,
+    r: 16,
+  };
+  const bAngle = Math.random() * Math.PI * 2;
+  botBall = {
+    x: W / 2, y: BOT_ARENA_Y0 + ARENA_H / 2,
+    vx: Math.cos(bAngle) * BALL_SPEED, vy: Math.sin(bAngle) * BALL_SPEED,
+    r: 16,
+  };
   topBars = BAR_HEALTHS.slice();
   botBars = BAR_HEALTHS.slice();
   topHitCount = 0;
@@ -207,7 +189,6 @@ function init() {
   gameOver = false;
   winner = null;
   started = false;
-  currentMonth = null;
 
   document.getElementById('start-overlay').style.display = 'flex';
 }
@@ -221,75 +202,60 @@ function startGame() {
 document.getElementById('start-overlay').addEventListener('click', startGame);
 document.addEventListener('keydown', (e) => { if (e.key === 'k' || e.key === 'K') startGame(); });
 
-function addPopup(x, y, text, side) {
-  popups.push({ x: Math.max(52, Math.min(W - 52, x)), y, text, side, age: 0 });
-}
-
-// true = Bodenkontakt (Bounce/Ziellinie entscheidet der Aufrufer)
-function stepBall(ball, x0, x1, y0, y1) {
-  ball.vy += GRAVITY;
-  if (ball.vy > MAX_FALL_SPEED) ball.vy = MAX_FALL_SPEED;
-  ball.x += ball.vx;
-  ball.y += ball.vy;
-  if (ball.x - ball.r < x0) { ball.x = x0 + ball.r; ball.vx *= -1; }
-  if (ball.x + ball.r > x1) { ball.x = x1 - ball.r; ball.vx *= -1; }
-  if (ball.y - ball.r < y0) { ball.y = y0 + ball.r; ball.vy *= -1; }
-  if (ball.y + ball.r > y1) { ball.y = y1 - ball.r; return true; }
-  return false;
-}
-
-function finish(side) {
-  if (!gameOver) { gameOver = true; winner = side; }
-}
+function addPopup(x, y, text, color) { popups.push({ x, y, text, color, age: 0 }); }
 
 function update() {
-  if (!started) return;
+  if (!started || gameOver) return;
 
-  if (!gameOver) {
-    // Oben: Bitcoin Ball
-    const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
-    if (stepBall(topBall, 12, W - 12, TOP_ARENA_Y0 + 10, topFloor - 10)) {
-      if (!isFullyDepleted(topBars)) {
-        topBall.vy = -BOUNCE_VY;
-        if (topHitCount < BTC_PRICES.length) {
-          const dmg = BTC_PRICES[topHitCount];
-          topHitCount++;
-          currentMonth = MONTHS[topHitCount - 1];
-          topDamage += dmg;
-          applyDamage(topBars, dmg);
-          addPopup(topBall.x, topBall.y, '-' + formatUsd(dmg), 'top');
-          topHitSound(topHitCount);
-        }
-      } else {
-        topBall.vy = 0;
-        finish('top');
-      }
+  // Oben: Fibonacci Ball
+  const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
+  const tx0 = 12, tx1 = W - 12, ty0 = TOP_ARENA_Y0 + 10, ty1 = topFloor - 10;
+  topBall.vy += GRAVITY;
+  if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
+  topBall.x += topBall.vx;
+  topBall.y += topBall.vy;
+  if (topBall.x - topBall.r < tx0) { topBall.x = tx0 + topBall.r; topBall.vx *= -1; }
+  if (topBall.x + topBall.r > tx1) { topBall.x = tx1 - topBall.r; topBall.vx *= -1; }
+  if (topBall.y - topBall.r < ty0) { topBall.y = ty0 + topBall.r; topBall.vy *= -1; }
+  if (topBall.y + topBall.r > ty1) {
+    topBall.y = ty1 - topBall.r;
+    if (!isFullyDepleted(topBars)) {
+      topBall.vy = -BOUNCE_VY;
+      topHitCount++;
+      const dmg = fibonacci(topHitCount);
+      topDamage += dmg;
+      applyDamage(topBars, dmg);
+      addPopup(topBall.x, topBall.y, '-' + formatNum(dmg), TOP_COLOR);
+      topHitSound(topHitCount);
+    } else {
+      topBall.vy = 0;
+      if (!gameOver) { gameOver = true; winner = 'top'; }
     }
+  }
 
-    // Unten: Gold Ball
-    const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
-    if (stepBall(botBall, 12, W - 12, BOT_ARENA_Y0 + 10, botFloor - 10)) {
-      if (!isFullyDepleted(botBars)) {
-        botBall.vy = -BOUNCE_VY;
-        if (botHitCount < GOLD_PRICES.length) {
-          const dmg = GOLD_PRICES[botHitCount];
-          botHitCount++;
-          botDamage += dmg;
-          applyDamage(botBars, dmg);
-          addPopup(botBall.x, botBall.y, '-' + formatUsd(dmg), 'bot');
-          botHitSound(botHitCount);
-        }
-      } else {
-        botBall.vy = 0;
-        finish('bot');
-      }
-    }
-
-    // Daten aufgebraucht, keiner durch: wer weniger Rest-HP hat, gewinnt
-    if (!gameOver && topHitCount >= YEARS && botHitCount >= YEARS) {
-      const restTop = topBars.reduce((a, b) => a + b, 0);
-      const restBot = botBars.reduce((a, b) => a + b, 0);
-      finish(restTop <= restBot ? 'top' : 'bot');
+  // Unten: Golden Ratio Ball
+  const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
+  const bx0 = 12, bx1 = W - 12, by0 = BOT_ARENA_Y0 + 10, by1 = botFloor - 10;
+  botBall.vy += GRAVITY;
+  if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
+  botBall.x += botBall.vx;
+  botBall.y += botBall.vy;
+  if (botBall.x - botBall.r < bx0) { botBall.x = bx0 + botBall.r; botBall.vx *= -1; }
+  if (botBall.x + botBall.r > bx1) { botBall.x = bx1 - botBall.r; botBall.vx *= -1; }
+  if (botBall.y - botBall.r < by0) { botBall.y = by0 + botBall.r; botBall.vy *= -1; }
+  if (botBall.y + botBall.r > by1) {
+    botBall.y = by1 - botBall.r;
+    if (!isFullyDepleted(botBars)) {
+      botBall.vy = -BOUNCE_VY;
+      botHitCount++;
+      const dmg = goldenDamage(botHitCount);
+      botDamage += dmg;
+      applyDamage(botBars, dmg);
+      addPopup(botBall.x, botBall.y, '-' + formatNum(dmg), BOT_COLOR);
+      botHitSound(botHitCount);
+    } else {
+      botBall.vy = 0;
+      if (!gameOver) { gameOver = true; winner = 'bot'; }
     }
   }
 
@@ -315,79 +281,46 @@ function drawArenaBg(y0, y1) {
   ctx.lineWidth = 3;
   ctx.strokeRect(1.5, y0 + 1.5, W - 3, (y1 - y0) - 3);
 }
-function drawBall(ball, color, label) {
+function drawSymbolBall(x, y, r, color, symbol) {
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#000';
   ctx.stroke();
   ctx.fillStyle = '#fff';
-  ctx.font = '900 ' + Math.round(ball.r * (label.length > 1 ? 0.95 : 1.2)) + 'px Arial';
+  ctx.font = '900 ' + Math.round(r * 1.1) + 'px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, ball.x, ball.y + 1);
+  ctx.fillText(symbol, x, y + 1);
 }
-function drawPopups(side, color) {
-  for (const p of popups) {
-    if (p.side !== side) continue;
-    ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
-    ctx.font = 'bold 15px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.strokeText(p.text, p.x, p.y - p.age * 0.6);
-    ctx.fillStyle = color;
-    ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
-    ctx.globalAlpha = 1;
+function drawHealthBar(y0, y1, bg, health, maxHealth) {
+  if (health <= 0) {
+    ctx.fillStyle = '#e9ddc4';
+    ctx.fillRect(0, y0, W, y1 - y0);
+    return;
   }
-}
-function drawHealthBar(y0, y1, color, hp, maxHp) {
-  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
   ctx.fillRect(0, y0, W, y1 - y0);
-  ctx.fillStyle = color;
-  ctx.fillRect(0, y0, W * Math.max(0, hp) / maxHp, y1 - y0);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, y0, W * (health / maxHealth), y1 - y0);
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, y0 + 1, W - 2, (y1 - y0) - 2);
-  ctx.font = '900 20px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-  const txt = Math.max(0, Math.round(hp)).toLocaleString('de-DE');
-  ctx.strokeText(txt, W / 2, (y0 + y1) / 2 + 1);
   ctx.fillStyle = '#fff';
-  ctx.fillText(txt, W / 2, (y0 + y1) / 2 + 1);
-}
-
-function drawSide(o) {
-  ctx.fillStyle = o.text;
   ctx.font = '900 20px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(o.title, W / 2, (o.labelY0 + o.labelY1) / 2);
-
-  const active = getActiveBarIndex(o.bars);
-  const floorY = o.arenaY1 + active * BAR_H;
-  drawArenaBg(o.arenaY0, floorY);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, o.arenaY0, W, floorY - o.arenaY0);
-  ctx.clip();
-  drawBall(o.ball, o.color, o.symbol);
-  drawPopups(o.side, o.color);
-  ctx.restore();
-
-  for (let i = active; i < o.bars.length; i++) {
-    const y0 = floorY + (i - active) * BAR_H;
-    drawHealthBar(y0, y0 + BAR_H, o.text, o.bars[i], BAR_HEALTHS[i]);
+  ctx.fillText(formatNum(health), W / 2, (y0 + y1) / 2);
+}
+function drawSideBars(bars, arenaY1orig, color) {
+  const activeIdx = getActiveBarIndex(bars);
+  const floor = arenaY1orig + activeIdx * BAR_H;
+  for (let i = activeIdx; i < bars.length; i++) {
+    const y0 = floor + (i - activeIdx) * BAR_H;
+    drawHealthBar(y0, y0 + BAR_H, color, bars[i], BAR_HEALTHS[i]);
   }
-  drawChecker(o.checkerY0, o.checkerY1);
 }
 
 function draw() {
@@ -395,63 +328,84 @@ function draw() {
   ctx.fillStyle = '#e9ddc4';
   ctx.fillRect(0, 0, W, H);
 
-  drawSide({
-    title: 'BITCOIN BALL', text: TOP_TEXT, color: TOP_COLOR, symbol: 'B', side: 'top',
-    ball: topBall, bars: topBars,
-    labelY0: TOP_LABEL_Y0, labelY1: TOP_LABEL_Y1,
-    arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
-    checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
-  });
-
-  // VS-Band: Erklärung links, VS mittig, aktueller Monat rechts
-  const vsMid = (VS_Y0 + VS_Y1) / 2;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.font = 'bold 10px Arial';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillText('DAMAGE = AVG. MONTHLY PRICE (USD)', 12, vsMid);
-  ctx.textAlign = 'center';
-  ctx.font = '900 22px Arial';
-  ctx.fillStyle = '#111';
-  ctx.fillText('VS', W / 2 + 20, vsMid);
-  ctx.textAlign = 'right';
+  // Top-Label
+  ctx.fillStyle = TOP_COLOR;
   ctx.font = '900 20px Arial';
-  ctx.fillText(currentMonth || '', W - 12, vsMid);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FIBONACCI BALL', W / 2, LABEL_H / 2);
 
-  drawSide({
-    title: 'GOLD BALL (PER KG)', text: BOT_TEXT, color: BOT_COLOR, symbol: 'Au', side: 'bot',
-    ball: botBall, bars: botBars,
-    labelY0: BOT_LABEL_Y0, labelY1: BOT_LABEL_Y1,
-    arenaY0: BOT_ARENA_Y0, arenaY1: BOT_ARENA_Y1,
-    checkerY0: BOT_CHECKER_Y0, checkerY1: BOT_CHECKER_Y1,
-  });
+  const topActiveIdx = getActiveBarIndex(topBars);
+  const topFloorY = TOP_ARENA_Y1 + topActiveIdx * BAR_H;
+  drawArenaBg(TOP_ARENA_Y0, topFloorY);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, TOP_ARENA_Y0, W, topFloorY - TOP_ARENA_Y0);
+  ctx.clip();
+  drawSymbolBall(topBall.x, topBall.y, topBall.r, TOP_COLOR, 'F');
+  for (const p of popups) {
+    if (p.color !== TOP_COLOR) continue;
+    ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
+    ctx.fillStyle = TOP_COLOR;
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  drawSideBars(topBars, TOP_ARENA_Y1, TOP_COLOR);
+  drawChecker(TOP_CHECKER_Y0, TOP_CHECKER_Y1);
+
+  // VS
+  ctx.fillStyle = '#111';
+  ctx.font = '900 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
+
+  // Bottom-Label
+  ctx.fillStyle = BOT_COLOR;
+  ctx.font = '900 20px Arial';
+  ctx.fillText('GOLDEN RATIO BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
+
+  const botActiveIdx = getActiveBarIndex(botBars);
+  const botFloorY = BOT_ARENA_Y1 + botActiveIdx * BAR_H;
+  drawArenaBg(BOT_ARENA_Y0, botFloorY);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, BOT_ARENA_Y0, W, botFloorY - BOT_ARENA_Y0);
+  ctx.clip();
+  drawSymbolBall(botBall.x, botBall.y, botBall.r, BOT_COLOR, 'φ');
+  for (const p of popups) {
+    if (p.color !== BOT_COLOR) continue;
+    ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
+    ctx.fillStyle = BOT_COLOR;
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  drawSideBars(botBars, BOT_ARENA_Y1, BOT_COLOR);
+  drawChecker(BOT_CHECKER_Y0, BOT_CHECKER_Y1);
 
   if (gameOver) {
     const top = winner === 'top';
     const y0 = top ? TOP_ARENA_Y0 : BOT_ARENA_Y0;
     const y1 = top ? TOP_CHECKER_Y0 : BOT_CHECKER_Y0;
-    const winDmg = top ? topDamage : botDamage;
-    const loseDmg = top ? botDamage : topDamage;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(0, y0, W, y1 - y0);
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '900 26px Arial';
-    ctx.fillText((top ? 'BITCOIN' : 'GOLD') + ' BALL WINS', W / 2, (y0 + y1) / 2 - 14);
-    ctx.font = 'bold 15px Arial';
-    ctx.fillText(formatK(winDmg) + ' vs ' + formatK(loseDmg) + ' total damage', W / 2, (y0 + y1) / 2 + 16);
+    ctx.font = '900 24px Arial';
+    ctx.fillText((top ? 'FIBONACCI' : 'GOLDEN RATIO') + ' BALL WINS', W / 2, (y0 + y1) / 2);
   }
 }
 
-// Fester Zeitschritt: Videolänge unabhängig von der Bildwiederholrate (60/120 Hz)
-const STEP_MS = 1000 / 60;
-let lastT = 0, acc = 0;
-function loop(t) {
-  if (!lastT) lastT = t;
-  acc += Math.min(t - lastT, 100);
-  lastT = t;
-  while (acc >= STEP_MS) { update(); acc -= STEP_MS; }
+function loop() {
+  update();
   draw();
   requestAnimationFrame(loop);
 }
