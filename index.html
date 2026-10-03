@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Fibonacci Ball vs Golden Ratio Ball</title>
+<title>Speed Ball vs Inferno Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -91,35 +91,17 @@ window.addEventListener('resize', resize);
 resize();
 
 // Farben
-const TOP_COLOR = '#3b82c4';  // Fibonacci Ball - Blau
-const BOT_COLOR = '#C9A15C';  // Golden Ratio Ball - Gold
+const TOP_COLOR = '#C86B2E';  // Speed Ball - Orange
+const BOT_COLOR = '#2BD9B9';  // Inferno Ball - Türkis
 
-// Jeder Ball hat 3 Balken (HP), der Boden ist immer der aktive Balken.
-const BAR_HEALTHS = [1000, 10000000, 100000000000];
+// Beide Bälle haben 3 Balken (HP), der Boden ist immer der aktive Balken.
+const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
 
-// Identische Physik für beide Bälle
+// Physik für Speed Ball (springt normal, wird mit jedem Treffer etwas schneller)
 const GRAVITY = 0.22;
 const MAX_FALL_SPEED = 30;
 const BOUNCE_VY = 9;
 const BALL_SPEED = 3.2;
-
-const PHI = (1 + Math.sqrt(5)) / 2; // ≈ 1,6180339887
-
-function fibonacci(n) {
-  let a = 1, b = 1;
-  if (n <= 2) return 1;
-  for (let i = 3; i <= n; i++) {
-    const c = a + b;
-    a = b;
-    b = c;
-  }
-  return b;
-}
-// Golden-Ratio-Schaden: φ^n, aufgerundet — wächst mit fast identischer Rate wie Fibonacci
-// (fib(n) ≈ φ^n / √5), aber ohne die √5-Normierung, also durchgehend etwas stärker
-function goldenDamage(n) {
-  return Math.round(Math.pow(PHI, n));
-}
 
 function formatNum(v) {
   return Math.round(v).toLocaleString('de-DE');
@@ -145,15 +127,28 @@ function beep(freq, dur, type, vol) {
   osc.start();
   osc.stop(audioCtx.currentTime + dur);
 }
-function topHitSound(n) { beep(300 + n * 6, 0.16, 'triangle', 0.14); }
-function botHitSound(n) { beep(220 + n * 6, 0.16, 'sine', 0.14); }
+function speedHitSound(n) { beep(300 + n * 4, 0.14, 'triangle', 0.14); }
+
+let infernoHumOsc = null, infernoHumGain = null;
+function startInfernoHum() {
+  if (!audioCtx || infernoHumOsc) return;
+  infernoHumOsc = audioCtx.createOscillator();
+  infernoHumGain = audioCtx.createGain();
+  infernoHumOsc.type = 'sawtooth';
+  infernoHumOsc.frequency.setValueAtTime(90, audioCtx.currentTime);
+  infernoHumGain.gain.setValueAtTime(0.045, audioCtx.currentTime);
+  infernoHumOsc.connect(infernoHumGain);
+  infernoHumGain.connect(audioCtx.destination);
+  infernoHumOsc.start();
+}
 
 function applyDamage(bars, dmg) {
-  for (let i = 0; i < bars.length; i++) {
+  let remaining = dmg;
+  for (let i = 0; i < bars.length && remaining > 0; i++) {
     if (bars[i] > 0) {
-      bars[i] -= dmg;
-      if (bars[i] < 0) bars[i] = 0;
-      return;
+      const take = Math.min(bars[i], remaining);
+      bars[i] -= take;
+      remaining -= take;
     }
   }
 }
@@ -163,8 +158,19 @@ function getActiveBarIndex(bars) {
   return bars.length;
 }
 
-let topBall, botBall, topBars, botBars, topHitCount, botHitCount, topDamage, botDamage;
-let popups, started, gameOver, winner;
+let topBall, botBall, topBars, botBars, topHitCount, botHitCount, infernoSec;
+
+function fibonacci(n) {
+  let a = 1, b = 1;
+  if (n <= 2) return 1;
+  for (let i = 3; i <= n; i++) {
+    const c = a + b;
+    a = b;
+    b = c;
+  }
+  return b;
+}
+let popups, started, gameOver, winner, beamFlicker, sparkPhase;
 
 function init() {
   const tAngle = Math.random() * Math.PI * 2;
@@ -177,18 +183,19 @@ function init() {
   botBall = {
     x: W / 2, y: BOT_ARENA_Y0 + ARENA_H / 2,
     vx: Math.cos(bAngle) * BALL_SPEED, vy: Math.sin(bAngle) * BALL_SPEED,
-    r: 16,
+    r: 17,
   };
   topBars = BAR_HEALTHS.slice();
   botBars = BAR_HEALTHS.slice();
   topHitCount = 0;
   botHitCount = 0;
-  topDamage = 0;
-  botDamage = 0;
+  infernoSec = 0;
   popups = [];
   gameOver = false;
   winner = null;
   started = false;
+  beamFlicker = 0;
+  sparkPhase = 0;
 
   document.getElementById('start-overlay').style.display = 'flex';
 }
@@ -196,6 +203,7 @@ function init() {
 function startGame() {
   if (started) return;
   ensureAudio();
+  startInfernoHum();
   started = true;
   document.getElementById('start-overlay').style.display = 'none';
 }
@@ -204,60 +212,67 @@ document.addEventListener('keydown', (e) => { if (e.key === 'k' || e.key === 'K'
 
 function addPopup(x, y, text, color) { popups.push({ x, y, text, color, age: 0 }); }
 
+function speedBallDamage(n) { return 100000 * n; }
+function speedBallMult(n) { return 1 + n * 0.08; }
+function infernoBeamRate() { return fibonacci(Math.floor(infernoSec) + 1); } // Fibonacci-Schaden/Sek., springt jede Sekunde zur nächsten Fibonacci-Zahl
+
 function update() {
   if (!started || gameOver) return;
 
-  // Oben: Fibonacci Ball
-  const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
-  const tx0 = 12, tx1 = W - 12, ty0 = TOP_ARENA_Y0 + 10, ty1 = topFloor - 10;
-  topBall.vy += GRAVITY;
-  if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
-  topBall.x += topBall.vx;
-  topBall.y += topBall.vy;
-  if (topBall.x - topBall.r < tx0) { topBall.x = tx0 + topBall.r; topBall.vx *= -1; }
-  if (topBall.x + topBall.r > tx1) { topBall.x = tx1 - topBall.r; topBall.vx *= -1; }
-  if (topBall.y - topBall.r < ty0) { topBall.y = ty0 + topBall.r; topBall.vy *= -1; }
-  if (topBall.y + topBall.r > ty1) {
-    topBall.y = ty1 - topBall.r;
-    if (!isFullyDepleted(topBars)) {
+  sparkPhase += 0.08;
+  infernoSec += 1 / 60;
+
+  // Oben: Speed Ball - springt normal, wird mit jedem Treffer schneller, Einzeltreffer-Schaden
+  if (!isFullyDepleted(topBars)) {
+    const mult = speedBallMult(topHitCount);
+    const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
+    const tx0 = 12, tx1 = W - 12, ty0 = TOP_ARENA_Y0 + 10, ty1 = topFloor - 10;
+    topBall.vy += GRAVITY * mult;
+    if (topBall.vy > MAX_FALL_SPEED * mult) topBall.vy = MAX_FALL_SPEED * mult;
+    topBall.x += topBall.vx * mult;
+    topBall.y += topBall.vy * mult;
+    if (topBall.x - topBall.r < tx0) { topBall.x = tx0 + topBall.r; topBall.vx *= -1; }
+    if (topBall.x + topBall.r > tx1) { topBall.x = tx1 - topBall.r; topBall.vx *= -1; }
+    if (topBall.y - topBall.r < ty0) { topBall.y = ty0 + topBall.r; topBall.vy *= -1; }
+    if (topBall.y + topBall.r > ty1) {
+      topBall.y = ty1 - topBall.r;
       topBall.vy = -BOUNCE_VY;
       topHitCount++;
-      const dmg = fibonacci(topHitCount);
-      topDamage += dmg;
+      const dmg = speedBallDamage(topHitCount);
       applyDamage(topBars, dmg);
       addPopup(topBall.x, topBall.y, '-' + formatNum(dmg), TOP_COLOR);
-      topHitSound(topHitCount);
-    } else {
-      topBall.vy = 0;
-      if (!gameOver) { gameOver = true; winner = 'top'; }
+      speedHitSound(topHitCount);
+      if (isFullyDepleted(topBars) && !gameOver) { gameOver = true; winner = 'top'; }
     }
   }
 
-  // Unten: Golden Ratio Ball
-  const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
-  const bx0 = 12, bx1 = W - 12, by0 = BOT_ARENA_Y0 + 10, by1 = botFloor - 10;
-  botBall.vy += GRAVITY;
-  if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
-  botBall.x += botBall.vx;
-  botBall.y += botBall.vy;
-  if (botBall.x - botBall.r < bx0) { botBall.x = bx0 + botBall.r; botBall.vx *= -1; }
-  if (botBall.x + botBall.r > bx1) { botBall.x = bx1 - botBall.r; botBall.vx *= -1; }
-  if (botBall.y - botBall.r < by0) { botBall.y = by0 + botBall.r; botBall.vy *= -1; }
-  if (botBall.y + botBall.r > by1) {
-    botBall.y = by1 - botBall.r;
-    if (!isFullyDepleted(botBars)) {
+  // Unten: Inferno Ball - springt mit normaler Gravitation, feuert dabei durchgängig einen Beam;
+  // jeder Bodenkontakt erhöht die Beam-Rate um 10.000/s
+  if (!isFullyDepleted(botBars)) {
+    const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
+    const bx0 = 12, bx1 = W - 12, by0 = BOT_ARENA_Y0 + 10, by1 = botFloor - 10;
+    botBall.vy += GRAVITY;
+    if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
+    botBall.x += botBall.vx;
+    botBall.y += botBall.vy;
+    if (botBall.x - botBall.r < bx0) { botBall.x = bx0 + botBall.r; botBall.vx *= -1; }
+    if (botBall.x + botBall.r > bx1) { botBall.x = bx1 - botBall.r; botBall.vx *= -1; }
+    if (botBall.y - botBall.r < by0) { botBall.y = by0 + botBall.r; botBall.vy *= -1; }
+    if (botBall.y + botBall.r > by1) {
+      botBall.y = by1 - botBall.r;
       botBall.vy = -BOUNCE_VY;
       botHitCount++;
-      const dmg = goldenDamage(botHitCount);
-      botDamage += dmg;
-      applyDamage(botBars, dmg);
-      addPopup(botBall.x, botBall.y, '-' + formatNum(dmg), BOT_COLOR);
-      botHitSound(botHitCount);
-    } else {
-      botBall.vy = 0;
-      if (!gameOver) { gameOver = true; winner = 'bot'; }
     }
   }
+
+  if (!isFullyDepleted(botBars)) {
+    const rate = infernoBeamRate();
+    const tick = rate / 60;
+    applyDamage(botBars, tick);
+    beamFlicker = 1;
+    if (isFullyDepleted(botBars) && !gameOver) { gameOver = true; winner = 'bot'; }
+  }
+  beamFlicker = Math.max(0, beamFlicker - 0.03);
 
   for (let i = popups.length - 1; i >= 0; i--) {
     popups[i].age++;
@@ -281,34 +296,18 @@ function drawArenaBg(y0, y1) {
   ctx.lineWidth = 3;
   ctx.strokeRect(1.5, y0 + 1.5, W - 3, (y1 - y0) - 3);
 }
-function drawSymbolBall(x, y, r, color, symbol) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#000';
-  ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.font = '900 ' + Math.round(r * 1.1) + 'px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(symbol, x, y + 1);
-}
-function drawHealthBar(y0, y1, bg, health, maxHealth) {
+function drawHealthBar(y0, y1, bg, health) {
   if (health <= 0) {
     ctx.fillStyle = '#e9ddc4';
     ctx.fillRect(0, y0, W, y1 - y0);
     return;
   }
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
-  ctx.fillRect(0, y0, W, y1 - y0);
   ctx.fillStyle = bg;
-  ctx.fillRect(0, y0, W * (health / maxHealth), y1 - y0);
+  ctx.fillRect(0, y0, W, y1 - y0);
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, y0 + 1, W - 2, (y1 - y0) - 2);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#111';
   ctx.font = '900 20px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -319,7 +318,7 @@ function drawSideBars(bars, arenaY1orig, color) {
   const floor = arenaY1orig + activeIdx * BAR_H;
   for (let i = activeIdx; i < bars.length; i++) {
     const y0 = floor + (i - activeIdx) * BAR_H;
-    drawHealthBar(y0, y0 + BAR_H, color, bars[i], BAR_HEALTHS[i]);
+    drawHealthBar(y0, y0 + BAR_H, color, bars[i]);
   }
 }
 
@@ -328,12 +327,12 @@ function draw() {
   ctx.fillStyle = '#e9ddc4';
   ctx.fillRect(0, 0, W, H);
 
-  // Top-Label
+  // ===== Top: Speed Ball =====
   ctx.fillStyle = TOP_COLOR;
-  ctx.font = '900 20px Arial';
+  ctx.font = '900 22px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('FIBONACCI BALL', W / 2, LABEL_H / 2);
+  ctx.fillText('SPEED BALL', W / 2, LABEL_H / 2);
 
   const topActiveIdx = getActiveBarIndex(topBars);
   const topFloorY = TOP_ARENA_Y1 + topActiveIdx * BAR_H;
@@ -342,12 +341,30 @@ function draw() {
   ctx.beginPath();
   ctx.rect(0, TOP_ARENA_Y0, W, topFloorY - TOP_ARENA_Y0);
   ctx.clip();
-  drawSymbolBall(topBall.x, topBall.y, topBall.r, TOP_COLOR, 'F');
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 12px Arial';
+  ctx.fillStyle = TOP_COLOR;
+  ctx.fillText(
+    'DAMAGE: ' + formatNum(speedBallDamage(topHitCount + 1)) + '  |  SPEED: ' + speedBallMult(topHitCount).toFixed(2) + 'x',
+    12, TOP_ARENA_Y0 + 14
+  );
+
+  if (!isFullyDepleted(topBars)) {
+    ctx.beginPath();
+    ctx.arc(topBall.x, topBall.y, topBall.r, 0, Math.PI * 2);
+    ctx.fillStyle = TOP_COLOR;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+  }
   for (const p of popups) {
     if (p.color !== TOP_COLOR) continue;
     ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
     ctx.fillStyle = TOP_COLOR;
     ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
     ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
     ctx.globalAlpha = 1;
   }
@@ -363,10 +380,10 @@ function draw() {
   ctx.textBaseline = 'middle';
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
-  // Bottom-Label
+  // ===== Bottom: Inferno Ball =====
   ctx.fillStyle = BOT_COLOR;
-  ctx.font = '900 20px Arial';
-  ctx.fillText('GOLDEN RATIO BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
+  ctx.font = '900 22px Arial';
+  ctx.fillText('INFERNO BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
 
   const botActiveIdx = getActiveBarIndex(botBars);
   const botFloorY = BOT_ARENA_Y1 + botActiveIdx * BAR_H;
@@ -375,7 +392,58 @@ function draw() {
   ctx.beginPath();
   ctx.rect(0, BOT_ARENA_Y0, W, botFloorY - BOT_ARENA_Y0);
   ctx.clip();
-  drawSymbolBall(botBall.x, botBall.y, botBall.r, BOT_COLOR, 'φ');
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 12px Arial';
+  ctx.fillStyle = BOT_COLOR;
+  ctx.fillText('DAMAGE: 0  |  BEAM: ' + formatNum(infernoBeamRate()) + '/s', 12, BOT_ARENA_Y0 + 14);
+
+  if (!isFullyDepleted(botBars)) {
+    // Beam-Strahl nach unten bis zum Boden der eigenen Arena
+    const grad = ctx.createLinearGradient(0, botBall.y, 0, botFloorY);
+    grad.addColorStop(0, BOT_COLOR + 'ff');
+    grad.addColorStop(1, BOT_COLOR + '10');
+    ctx.save();
+    ctx.globalAlpha = 0.55 + beamFlicker * 0.3;
+    ctx.fillStyle = grad;
+    ctx.fillRect(botBall.x - 4, botBall.y, 8, botFloorY - botBall.y);
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(botBall.x - 1.3, botBall.y, 2.6, botFloorY - botBall.y);
+    ctx.restore();
+  }
+
+  if (!isFullyDepleted(botBars)) {
+    // Glüh-Aura
+    const glow = ctx.createRadialGradient(botBall.x, botBall.y, 2, botBall.x, botBall.y, botBall.r * 2.4);
+    glow.addColorStop(0, BOT_COLOR + 'aa');
+    glow.addColorStop(1, BOT_COLOR + '00');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(botBall.x, botBall.y, botBall.r * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Funken-Strahlen rundherum
+    ctx.strokeStyle = BOT_COLOR;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + sparkPhase * 0.5;
+      const r0 = botBall.r + 3, r1 = botBall.r + 9 + Math.sin(sparkPhase * 2 + i) * 3;
+      ctx.beginPath();
+      ctx.moveTo(botBall.x + Math.cos(a) * r0, botBall.y + Math.sin(a) * r0);
+      ctx.lineTo(botBall.x + Math.cos(a) * r1, botBall.y + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(botBall.x, botBall.y, botBall.r, 0, Math.PI * 2);
+    ctx.fillStyle = BOT_COLOR;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+  }
+
   for (const p of popups) {
     if (p.color !== BOT_COLOR) continue;
     ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
@@ -400,7 +468,7 @@ function draw() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '900 24px Arial';
-    ctx.fillText((top ? 'FIBONACCI' : 'GOLDEN RATIO') + ' BALL WINS', W / 2, (y0 + y1) / 2);
+    ctx.fillText((top ? 'SPEED' : 'INFERNO') + ' BALL WINS', W / 2, (y0 + y1) / 2);
   }
 }
 
