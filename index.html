@@ -212,7 +212,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'k' || e.key === 'K'
 
 function addPopup(x, y, text, color) { popups.push({ x, y, text, color, age: 0 }); }
 
-function speedBallDamage(n) { return 100000 * n; }
+function speedBallDamage(n) { return 1000000 * n; }
 function speedBallMult(n) { return 1 + n * 0.08; }
 function infernoBeamRate() { return fibonacci(Math.floor(infernoSec) + 1); } // Fibonacci-Schaden/Sek., springt jede Sekunde zur nächsten Fibonacci-Zahl
 
