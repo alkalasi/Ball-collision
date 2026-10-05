@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Speed Ball vs Inferno Ball</title>
+<title>Poison Ball vs Infernonacci Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -91,13 +91,13 @@ window.addEventListener('resize', resize);
 resize();
 
 // Farben
-const TOP_COLOR = '#C86B2E';  // Speed Ball - Orange
-const BOT_COLOR = '#2BD9B9';  // Inferno Ball - Türkis
+const TOP_COLOR = '#9B59D0';  // Poison Ball - Violett
+const BOT_COLOR = '#2BD9B9';  // Infernonacci Ball - Türkis
 
 // Beide Bälle haben 3 Balken (HP), der Boden ist immer der aktive Balken.
 const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
 
-// Physik für Speed Ball (springt normal, wird mit jedem Treffer etwas schneller)
+// Identische Physik für beide Bälle (normaler Bounce)
 const GRAVITY = 0.22;
 const MAX_FALL_SPEED = 30;
 const BOUNCE_VY = 9;
@@ -106,6 +106,18 @@ const BALL_SPEED = 3.2;
 function formatNum(v) {
   return Math.round(v).toLocaleString('de-DE');
 }
+function formatRate(v) {
+  return v < 10
+    ? v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : formatNum(v);
+}
+
+// ===== Poison Ball: Gift-Stacks =====
+// Jeder Bodenkontakt macht nur kleinen Direktschaden, fügt aber einen Gift-Stack hinzu.
+// Jeder neue Stack ist POISON_GROWTH-mal stärker als der vorherige und tickt ab dann bis zum Ende weiter.
+const POISON_BASE = 0.03;   // Stärke von Stack 1 (Schaden/Sek.)
+const POISON_GROWTH = 1.9;  // jeder weitere Stack ist so viel mal stärker
+const DIRECT_PER_HIT = 2;   // Direktschaden pro Treffer = DIRECT_PER_HIT * Trefferzahl
 
 let audioCtx = null;
 function ensureAudio() {
@@ -127,7 +139,7 @@ function beep(freq, dur, type, vol) {
   osc.start();
   osc.stop(audioCtx.currentTime + dur);
 }
-function speedHitSound(n) { beep(300 + n * 4, 0.14, 'triangle', 0.14); }
+function poisonHitSound(n) { beep(190 + n * 5, 0.13, 'square', 0.07); }
 
 let infernoHumOsc = null, infernoHumGain = null;
 function startInfernoHum() {
@@ -140,6 +152,9 @@ function startInfernoHum() {
   infernoHumOsc.connect(infernoHumGain);
   infernoHumGain.connect(audioCtx.destination);
   infernoHumOsc.start();
+}
+function stopInfernoHum() {
+  if (infernoHumGain && audioCtx) infernoHumGain.gain.setValueAtTime(0, audioCtx.currentTime);
 }
 
 function applyDamage(bars, dmg) {
@@ -158,8 +173,6 @@ function getActiveBarIndex(bars) {
   return bars.length;
 }
 
-let topBall, botBall, topBars, botBars, topHitCount, botHitCount, infernoSec;
-
 function fibonacci(n) {
   let a = 1, b = 1;
   if (n <= 2) return 1;
@@ -170,7 +183,9 @@ function fibonacci(n) {
   }
   return b;
 }
-let popups, started, gameOver, winner, beamFlicker, sparkPhase;
+
+let topBall, botBall, topBars, botBars, topHitCount, botHitCount, infernoSec;
+let popups, bubbles, started, gameOver, winner, beamFlicker, sparkPhase;
 
 function init() {
   const tAngle = Math.random() * Math.PI * 2;
@@ -191,6 +206,7 @@ function init() {
   botHitCount = 0;
   infernoSec = 0;
   popups = [];
+  bubbles = [];
   gameOver = false;
   winner = null;
   started = false;
@@ -210,11 +226,32 @@ function startGame() {
 document.getElementById('start-overlay').addEventListener('click', startGame);
 document.addEventListener('keydown', (e) => { if (e.key === 'k' || e.key === 'K') startGame(); });
 
-function addPopup(x, y, text, color) { popups.push({ x, y, text, color, age: 0 }); }
+function addPopup(x, y, text, color) {
+  popups.push({ x: Math.max(40, Math.min(W - 40, x)), y, text, color, age: 0 });
+}
 
-function speedBallDamage(n) { return 1000000 * n; }
-function speedBallMult(n) { return 1 + n * 0.08; }
-function infernoBeamRate() { return fibonacci(Math.floor(infernoSec) + 1); } // Fibonacci-Schaden/Sek., springt jede Sekunde zur nächsten Fibonacci-Zahl
+function poisonDirect(n) { return DIRECT_PER_HIT * n; }
+// Summe aller Stacks: Stack i hat Stärke POISON_BASE * GROWTH^(i-1)
+function poisonRate(n) {
+  if (n <= 0) return 0;
+  return POISON_BASE * (Math.pow(POISON_GROWTH, n) - 1) / (POISON_GROWTH - 1);
+}
+function infernoBeamRate() { return fibonacci(Math.floor(infernoSec) + 1); } // springt jede Sekunde zur nächsten Fibonacci-Zahl
+
+function finish(side) {
+  if (!gameOver) { gameOver = true; winner = side; stopInfernoHum(); }
+}
+
+function spawnBubble(x, y, big) {
+  if (bubbles.length > 140) return;
+  bubbles.push({
+    x: x + (Math.random() - 0.5) * 14, y: y + (Math.random() - 0.5) * 10,
+    vx: (Math.random() - 0.5) * (big ? 2.4 : 0.5),
+    vy: big ? -Math.random() * 2.2 - 0.4 : -Math.random() * 0.8 - 0.3,
+    r: big ? 2 + Math.random() * 3 : 1.5 + Math.random() * 2.5,
+    age: 0, life: big ? 34 : 46 + Math.random() * 20,
+  });
+}
 
 function update() {
   if (!started || gameOver) return;
@@ -222,15 +259,15 @@ function update() {
   sparkPhase += 0.08;
   infernoSec += 1 / 60;
 
-  // Oben: Speed Ball - springt normal, wird mit jedem Treffer schneller, Einzeltreffer-Schaden
+  // Oben: Poison Ball - normaler Bounce, kleiner Direktschaden + neuer Gift-Stack pro Treffer,
+  // alle Stacks ticken durchgehend weiter
   if (!isFullyDepleted(topBars)) {
-    const mult = speedBallMult(topHitCount);
     const topFloor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
     const tx0 = 12, tx1 = W - 12, ty0 = TOP_ARENA_Y0 + 10, ty1 = topFloor - 10;
-    topBall.vy += GRAVITY * mult;
-    if (topBall.vy > MAX_FALL_SPEED * mult) topBall.vy = MAX_FALL_SPEED * mult;
-    topBall.x += topBall.vx * mult;
-    topBall.y += topBall.vy * mult;
+    topBall.vy += GRAVITY;
+    if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
+    topBall.x += topBall.vx;
+    topBall.y += topBall.vy;
     if (topBall.x - topBall.r < tx0) { topBall.x = tx0 + topBall.r; topBall.vx *= -1; }
     if (topBall.x + topBall.r > tx1) { topBall.x = tx1 - topBall.r; topBall.vx *= -1; }
     if (topBall.y - topBall.r < ty0) { topBall.y = ty0 + topBall.r; topBall.vy *= -1; }
@@ -238,16 +275,22 @@ function update() {
       topBall.y = ty1 - topBall.r;
       topBall.vy = -BOUNCE_VY;
       topHitCount++;
-      const dmg = speedBallDamage(topHitCount);
+      const dmg = poisonDirect(topHitCount);
       applyDamage(topBars, dmg);
-      addPopup(topBall.x, topBall.y, '-' + formatNum(dmg), TOP_COLOR);
-      speedHitSound(topHitCount);
-      if (isFullyDepleted(topBars) && !gameOver) { gameOver = true; winner = 'top'; }
+      addPopup(topBall.x, topBall.y - 6, '-' + formatNum(dmg), TOP_COLOR);
+      addPopup(topBall.x, topBall.y - 24, '+1 STACK', '#6BCB3B');
+      poisonHitSound(topHitCount);
+      for (let i = 0; i < 7; i++) spawnBubble(topBall.x, topBall.y + topBall.r * 0.6, true);
     }
+
+    if (topHitCount > 0) {
+      applyDamage(topBars, poisonRate(topHitCount) / 60);
+      if (Math.random() < Math.min(0.85, 0.06 + topHitCount * 0.02)) spawnBubble(topBall.x, topBall.y, false);
+    }
+    if (isFullyDepleted(topBars)) finish('top');
   }
 
-  // Unten: Inferno Ball - springt mit normaler Gravitation, feuert dabei durchgängig einen Beam;
-  // jeder Bodenkontakt erhöht die Beam-Rate um 10.000/s
+  // Unten: Infernonacci Ball - springt normal, feuert durchgehend einen Beam (Fibonacci-Schaden pro Sekunde)
   if (!isFullyDepleted(botBars)) {
     const botFloor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const bx0 = 12, bx1 = W - 12, by0 = BOT_ARENA_Y0 + 10, by1 = botFloor - 10;
@@ -263,20 +306,24 @@ function update() {
       botBall.vy = -BOUNCE_VY;
       botHitCount++;
     }
-  }
 
-  if (!isFullyDepleted(botBars)) {
-    const rate = infernoBeamRate();
-    const tick = rate / 60;
-    applyDamage(botBars, tick);
+    applyDamage(botBars, infernoBeamRate() / 60);
     beamFlicker = 1;
-    if (isFullyDepleted(botBars) && !gameOver) { gameOver = true; winner = 'bot'; }
+    if (isFullyDepleted(botBars)) finish('bot');
   }
   beamFlicker = Math.max(0, beamFlicker - 0.03);
 
   for (let i = popups.length - 1; i >= 0; i--) {
     popups[i].age++;
     if (popups[i].age > 40) popups.splice(i, 1);
+  }
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.age++;
+    b.x += b.vx;
+    b.y += b.vy;
+    b.vy += 0.012;
+    if (b.age > b.life) bubbles.splice(i, 1);
   }
 }
 
@@ -327,12 +374,12 @@ function draw() {
   ctx.fillStyle = '#e9ddc4';
   ctx.fillRect(0, 0, W, H);
 
-  // ===== Top: Speed Ball =====
+  // ===== Top: Poison Ball =====
   ctx.fillStyle = TOP_COLOR;
   ctx.font = '900 22px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('SPEED BALL', W / 2, LABEL_H / 2);
+  ctx.fillText('POISON BALL', W / 2, LABEL_H / 2);
 
   const topActiveIdx = getActiveBarIndex(topBars);
   const topFloorY = TOP_ARENA_Y1 + topActiveIdx * BAR_H;
@@ -343,12 +390,39 @@ function draw() {
   ctx.clip();
 
   ctx.textAlign = 'left';
-  ctx.font = 'bold 12px Arial';
+  ctx.font = 'bold 11px Arial';
   ctx.fillStyle = TOP_COLOR;
   ctx.fillText(
-    'DAMAGE: ' + formatNum(speedBallDamage(topHitCount + 1)) + '  |  SPEED: ' + speedBallMult(topHitCount).toFixed(2) + 'x',
+    'POISON: ' + formatRate(poisonRate(topHitCount)) + '/s',
     12, TOP_ARENA_Y0 + 14
   );
+
+  if (!isFullyDepleted(topBars)) {
+    // Giftige Aura (wird mit den Stacks dichter)
+    const stackGlow = Math.min(1, topHitCount / 30);
+    const gr = topBall.r * (1.9 + stackGlow * 1.2);
+    const aura = ctx.createRadialGradient(topBall.x, topBall.y, 2, topBall.x, topBall.y, gr);
+    aura.addColorStop(0, 'rgba(120,200,60,' + (0.28 + stackGlow * 0.3) + ')');
+    aura.addColorStop(1, 'rgba(120,200,60,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(topBall.x, topBall.y, gr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Gift-Blasen
+  for (const b of bubbles) {
+    const a = Math.max(0, 1 - b.age / b.life);
+    ctx.globalAlpha = a * 0.85;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#7ED321';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(40,90,10,0.8)';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 
   if (!isFullyDepleted(topBars)) {
     ctx.beginPath();
@@ -358,13 +432,22 @@ function draw() {
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#000';
     ctx.stroke();
+    // kleine grüne Gift-Tropfen auf dem Ball
+    ctx.fillStyle = '#7ED321';
+    ctx.beginPath(); ctx.arc(topBall.x - 5, topBall.y - 4, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(topBall.x + 5, topBall.y + 2, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(topBall.x - 1, topBall.y + 6, 1.6, 0, Math.PI * 2); ctx.fill();
   }
   for (const p of popups) {
-    if (p.color !== TOP_COLOR) continue;
+    if (p.color === BOT_COLOR) continue;
     ctx.globalAlpha = Math.max(0, 1 - p.age / 40);
-    ctx.fillStyle = TOP_COLOR;
+    ctx.fillStyle = p.color;
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText(p.text, p.x, p.y - p.age * 0.6);
     ctx.fillText(p.text, p.x, p.y - p.age * 0.6);
     ctx.globalAlpha = 1;
   }
@@ -380,10 +463,10 @@ function draw() {
   ctx.textBaseline = 'middle';
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
-  // ===== Bottom: Inferno Ball =====
+  // ===== Bottom: Infernonacci Ball =====
   ctx.fillStyle = BOT_COLOR;
   ctx.font = '900 22px Arial';
-  ctx.fillText('INFERNO BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
+  ctx.fillText('INFERNONACCI BALL', W / 2, (BOT_LABEL_Y0 + BOT_LABEL_Y1) / 2);
 
   const botActiveIdx = getActiveBarIndex(botBars);
   const botFloorY = BOT_ARENA_Y1 + botActiveIdx * BAR_H;
@@ -396,7 +479,7 @@ function draw() {
   ctx.textAlign = 'left';
   ctx.font = 'bold 12px Arial';
   ctx.fillStyle = BOT_COLOR;
-  ctx.fillText('DAMAGE: 0  |  BEAM: ' + formatNum(infernoBeamRate()) + '/s', 12, BOT_ARENA_Y0 + 14);
+  ctx.fillText('BEAM: ' + formatNum(infernoBeamRate()) + '/s', 12, BOT_ARENA_Y0 + 14);
 
   if (!isFullyDepleted(botBars)) {
     // Beam-Strahl nach unten bis zum Boden der eigenen Arena
@@ -468,12 +551,18 @@ function draw() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '900 24px Arial';
-    ctx.fillText((top ? 'SPEED' : 'INFERNO') + ' BALL WINS', W / 2, (y0 + y1) / 2);
+    ctx.fillText((top ? 'POISON' : 'INFERNONACCI') + ' BALL WINS', W / 2, (y0 + y1) / 2);
   }
 }
 
-function loop() {
-  update();
+// Fester Zeitschritt: Videolänge unabhängig von der Bildwiederholrate (60/120 Hz)
+const STEP_MS = 1000 / 60;
+let lastT = 0, acc = 0;
+function loop(t) {
+  if (!lastT) lastT = t;
+  acc += Math.min(t - lastT, 100);
+  lastT = t;
+  while (acc >= STEP_MS) { update(); acc -= STEP_MS; }
   draw();
   requestAnimationFrame(loop);
 }
