@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Kane Ball vs Lamine Ball</title>
+<title>Speed Ball vs Golden Ratio Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -53,7 +53,7 @@ const ctx = canvas.getContext('2d');
 
 const W = 480;
 const LABEL_H = 36;
-const ARENA_H = 210;
+const ARENA_H = 270;
 const BAR_H = 44;
 const CHECKER_H = 14;
 const VS_H = 40;
@@ -91,14 +91,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // ===== Farben (RGB-Arrays, damit Glow/Alpha einfach geht) =====
-const KANE_RGB    = [224, 23, 46];    // Kane Ball - Rot
-const KANE_LIGHT  = [255, 125, 136];
-const KANE_DARK   = [128, 10, 24];
-const KANE_GOLD   = [255, 200, 61];   // goldene Funken (Golden Boot)
-const LAM_RGB     = [31, 101, 214];   // Lamine Ball - Blau
-const LAM_LIGHT   = [132, 180, 255];
-const LAM_DARK    = [12, 48, 120];
-const LAM_GARNET  = [216, 27, 96];    // Barca-Granat als Akzent
+const SPD_RGB    = [255, 112, 18];   // Speed Ball - Orange
+const SPD_LIGHT  = [255, 190, 110];
+const SPD_DARK   = [150, 55, 0];
+const SPD_HOT    = [255, 244, 176];  // weissglühend
+const SPD_BOLT   = [70, 190, 255];   // elektrisches Blau
+const PHI_RGB    = [214, 158, 20];   // Golden Ratio Ball - Gold
+const PHI_LIGHT  = [255, 226, 128];
+const PHI_DARK   = [122, 82, 0];
+const PHI_TEAL   = [18, 150, 128];   // Smaragd-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -106,31 +107,25 @@ function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a 
 const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
 
 // Physik (identische Sprungbahn: ~1 s pro Bodenkontakt)
-const GRAVITY = 0.34;
+const GRAVITY = 0.30;
 const MAX_FALL_SPEED = 30;
-const BOUNCE_VY = 10.1;
+const BOUNCE_VY = 9.487;
 const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
-// Kane: "Slow Factorial" - jeder Treffer verlangsamt die Zeit weiter, dafür steigt der Schaden per Fakultät
-const KANE_DT0 = 0.71;      // Zeitfaktor vor dem ersten Treffer (1 = normal)
-const KANE_SLOW = 0.9;     // Zeitfaktor wird pro Treffer mit diesem Wert multipliziert
-const KANE_MIN_DT = 0.04;  // Untergrenze, damit nichts einfriert
-function kaneDt(hits) { return Math.max(KANE_MIN_DT, KANE_DT0 * Math.pow(KANE_SLOW, hits)); }
+// Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
+const SPD_C = 120;        // Basisschaden
+const SPD_P = 5;          // Exponent des Schadens
+const SPD_DT0 = 0.78;      // Starttempo
+const SPD_K = 0.035;       // Tempozuwachs pro Treffer (linear)
+function speedDt(hits) { return SPD_DT0 * (1 + SPD_K * hits); }
+function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
+
+// Golden Ratio Ball: Schaden = phi^n
+const PHI = (1 + Math.sqrt(5)) / 2;
+function phiDamage(n) { return Math.round(Math.pow(PHI, n)); }
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
-
-function fibonacci(n) {
-  let a = 1, b = 1;
-  if (n <= 2) return 1;
-  for (let i = 3; i <= n; i++) { const c = a + b; a = b; b = c; }
-  return b;
-}
-function factorial(n) {
-  let r = 1;
-  for (let i = 2; i <= n; i++) r *= i;
-  return r;
-}
 
 // ===== Sound =====
 let audioCtx = null;
@@ -153,23 +148,19 @@ function beep(freq, dur, type, vol) {
   osc.start();
   osc.stop(audioCtx.currentTime + dur);
 }
-function kaneHitSound(n) { beep(60 + Math.min(n, 18) * 4, 0.3, 'sine', 0.22); beep(240 + n * 14, 0.07, 'square', 0.05); }
-function lamineHitSound(n) { beep(400 + (n % 12) * 40, 0.12, 'triangle', 0.1); }
+function speedHitSound(n) { const t = speedDt(n); beep(110 + Math.min(n, 80) * 2, 0.12, 'sine', 0.2); beep(520 + t * 140, 0.05, 'sawtooth', 0.05); }
+const PHI_NOTES = [523, 659, 784, 988, 1175, 988, 784, 659];
+function phiHitSound(n) { beep(PHI_NOTES[n % PHI_NOTES.length], 0.16, 'triangle', 0.1); beep(PHI_NOTES[n % PHI_NOTES.length] * PHI / 1.0 / 2, 0.1, 'sine', 0.04); }
 function breakSound() {
   if (!audioCtx) return;
   [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.16, 'triangle', 0.09), i * 70));
 }
 
 // ===== Bar-Logik =====
-// Schaden läuft bei einem Treffer auch in den nächsten Balken über, wenn der aktuelle leer ist
+// Original-Verhalten: ein Treffer beschädigt nur den aktuellen Balken, Überschuss verfällt
 function applyDamage(bars, dmg) {
-  let remaining = dmg;
-  for (let i = 0; i < bars.length && remaining > 0; i++) {
-    if (bars[i] > 0) {
-      const take = Math.min(bars[i], remaining);
-      bars[i] -= take;
-      remaining -= take;
-    }
+  for (let i = 0; i < bars.length; i++) {
+    if (bars[i] > 0) { bars[i] -= dmg; if (bars[i] < 0) bars[i] = 0; return; }
   }
 }
 function isFullyDepleted(bars) { return bars.every(h => h <= 0); }
@@ -193,36 +184,57 @@ function addPopup(side, x, y, text, color) {
 // Fortschritt 0..1 (logarithmisch über den verursachten Gesamtschaden) -> steuert Glow-Stärke
 function progressOf(total) { return Math.max(0, Math.min(1, Math.log10(total + 1) / 15)); }
 
+function boltPoints(x, y, ang, len) {
+  const pts = [[x, y]];
+  const n = 5;
+  let cx = x, cy = y;
+  for (let i = 1; i <= n; i++) {
+    const a = ang + (Math.random() - 0.5) * 1.1;
+    const l = len / n;
+    cx += Math.cos(a) * l; cy += Math.sin(a) * l;
+    pts.push([cx, cy]);
+  }
+  return pts;
+}
+
 function impactFx(side, ball, n) {
   const fx = fxOf(side);
   const fy = ball.y + ball.r;
   ball.squash = 1;
   if (side === 'top') {
-    // Kane: Schockwelle + Funkenregen + Einschlaglinien
-    fx.rings.push({ x: ball.x, y: fy, r: 6, grow: 3.6, life: 26, c: KANE_GOLD, w: 4 });
-    fx.rings.push({ x: ball.x, y: fy, r: 2, grow: 2.2, life: 34, c: KANE_RGB, w: 5 });
-    const cnt = 12 + Math.min(26, n * 2);
+    // Speed: Blitze, Funken-Fächer, Überschallring
+    const t = speedDt(n);
+    fx.rings.push({ x: ball.x, y: fy, r: 6, grow: 3.8 + t, life: 22, c: SPD_HOT, w: 4 });
+    fx.rings.push({ x: ball.x, y: fy, r: 2, grow: 2.4 + t * 0.8, life: 30, c: SPD_RGB, w: 5 });
+    if (t > 1.6) fx.rings.push({ x: ball.x, y: fy, r: 4, grow: 9, life: 14, c: SPD_BOLT, w: 3, flat: true });
+    const nb = Math.min(6, 2 + Math.floor(t));
+    for (let i = 0; i < nb; i++) {
+      const ang = -Math.PI * (0.1 + 0.8 * Math.random());
+      pushPart(fx, { type: 'bolt', pts: boltPoints(ball.x, fy, ang, 38 + Math.random() * 34), x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 12, r: 2.2, c: i % 2 ? SPD_BOLT : SPD_HOT });
+    }
+    const cnt = 14 + Math.min(26, Math.floor(n / 3));
     for (let i = 0; i < cnt; i++) {
       const a = -Math.PI * Math.random();
-      const v = 2.2 + Math.random() * 6.5;
-      const col = Math.random() < 0.5 ? KANE_GOLD : (Math.random() < 0.6 ? KANE_RGB : [255, 255, 255]);
-      pushPart(fx, { type: 'spark', x: ball.x, y: fy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 0.2, drag: 0.985, r: 1.4 + Math.random() * 1.6, age: 0, life: 26 + Math.random() * 22, c: col });
+      const v = 3 + Math.random() * 7.5;
+      const col = Math.random() < 0.5 ? SPD_HOT : (Math.random() < 0.6 ? SPD_RGB : SPD_BOLT);
+      pushPart(fx, { type: 'spark', x: ball.x, y: fy, vx: Math.cos(a) * v * 1.25, vy: Math.sin(a) * v, g: 0.2, drag: 0.982, r: 1.3 + Math.random() * 1.6, age: 0, life: 20 + Math.random() * 18, c: col });
     }
-    fx.shake = Math.max(fx.shake, Math.min(7, 2.2 + n * 0.3));
+    fx.shake = Math.max(fx.shake, Math.min(6, 1 + t * 0.9));
   } else {
-    // Lamine: Goldener-Schnitt-Burst (Phyllotaxis-Spirale)
-    fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.0, life: 24, c: LAM_LIGHT, w: 3.5 });
-    fx.rings.push({ x: ball.x, y: fy, r: 2, grow: 1.9, life: 32, c: LAM_GARNET, w: 3 });
-    const cnt = 16 + Math.min(26, Math.floor(n / 3));
+    // Golden Ratio: Goldener-Winkel-Burst + Ringe im Verhältnis phi
+    fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.0, life: 24, c: PHI_LIGHT, w: 3.5 });
+    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI, grow: 3.0 * PHI, life: 24, c: PHI_RGB, w: 3 });
+    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI * PHI, grow: 3.0 * PHI * PHI, life: 24, c: PHI_TEAL, w: 2.5 });
+    const cnt = 18 + Math.min(28, Math.floor(n / 3));
     for (let i = 0; i < cnt; i++) {
       const a = i * GOLDEN_ANGLE;
-      const v = 0.7 + 0.34 * Math.sqrt(i);
+      const v = 0.7 + 0.36 * Math.sqrt(i);
       let vx = Math.cos(a) * v, vy = Math.sin(a) * v;
       if (vy > 0) vy = -vy * 0.7;
-      const col = i % 3 === 0 ? LAM_LIGHT : (i % 3 === 1 ? LAM_GARNET : [255, 255, 255]);
+      const col = i % 3 === 0 ? PHI_LIGHT : (i % 3 === 1 ? PHI_TEAL : [255, 255, 255]);
       pushPart(fx, { type: 'dot', x: ball.x, y: fy, vx, vy, g: 0.015, drag: 0.955, r: 1.8 + (i % 4) * 0.5, age: 0, life: 42 + (i % 5) * 6, c: col });
     }
-    fx.shake = Math.max(fx.shake, Math.min(4, 0.8 + n * 0.03));
+    fx.shake = Math.max(fx.shake, Math.min(3.5, 0.6 + n * 0.03));
   }
 }
 
@@ -231,7 +243,7 @@ function onBarBreak(side, idx) {
   fx.flash = 1;
   fx.shake = Math.max(fx.shake, 9);
   const y = (side === 'top' ? TOP_ARENA_Y1 : BOT_ARENA_Y1) + idx * BAR_H + BAR_H / 2;
-  const palette = side === 'top' ? [KANE_RGB, KANE_GOLD, [255, 255, 255], KANE_LIGHT] : [LAM_RGB, LAM_GARNET, [255, 255, 255], LAM_LIGHT];
+  const palette = side === 'top' ? [SPD_RGB, SPD_HOT, SPD_BOLT, SPD_LIGHT] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
   for (let i = 0; i < 46; i++) {
     pushPart(fx, {
       type: 'confetti', x: 8 + Math.random() * (W - 16), y,
@@ -252,7 +264,7 @@ function finish(side) {
   fx.flash = 1;
   fx.shake = 10;
   const ball = side === 'top' ? topBall : botBall;
-  const palette = side === 'top' ? [KANE_RGB, KANE_GOLD, [255, 255, 255]] : [LAM_RGB, LAM_GARNET, [255, 255, 255], LAM_LIGHT];
+  const palette = side === 'top' ? [SPD_RGB, SPD_HOT, SPD_BOLT] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
   for (let i = 0; i < 110; i++) {
     const a = -Math.PI * Math.random();
     const v = 2 + Math.random() * 8;
@@ -301,7 +313,7 @@ function init() {
   topBall = {
     x: W / 2, y: TOP_ARENA_Y0 + ARENA_H / 2,
     vx: Math.cos(tAngle) * BALL_SPEED, vy: Math.sin(tAngle) * BALL_SPEED,
-    r: 16, dt: KANE_DT0, squash: 0, trail: [],
+    r: 16, dt: SPD_DT0, squash: 0, trail: [],
   };
   const bAngle = Math.random() * Math.PI * 2;
   botBall = {
@@ -349,11 +361,11 @@ function update() {
   updateFx();
   if (gameOver) return;
 
-  // ===== Oben: Kane Ball (Slow Factorial) =====
+  // ===== Oben: Speed Ball =====
   if (!isFullyDepleted(topBars)) {
     const floor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = TOP_ARENA_Y0 + 10, y1 = floor - 10;
-    const dt = kaneDt(topHitCount);
+    const dt = speedDt(topHitCount);
     topBall.dt = dt;
     topBall.vy += GRAVITY * dt;
     if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
@@ -361,34 +373,49 @@ function update() {
     topBall.y += topBall.vy * dt;
     if (topBall.x - topBall.r < x0) { topBall.x = x0 + topBall.r; topBall.vx *= -1; }
     if (topBall.x + topBall.r > x1) { topBall.x = x1 - topBall.r; topBall.vx *= -1; }
-    if (topBall.y - topBall.r < y0) { topBall.y = y0 + topBall.r; topBall.vy *= -1; }
-    fxTop.clock += 0.14 * dt;
+    if (topBall.y - topBall.r < y0) {
+      topBall.y = y0 + topBall.r; topBall.vy *= -1;
+      // Deckenknall: Funken nach unten, Ring, Shake
+      const cy = y0;
+      fxTop.rings.push({ x: topBall.x, y: cy, r: 5, grow: 3.2, life: 18, c: SPD_BOLT, w: 3 });
+      for (let i = 0; i < 12; i++) {
+        const a = Math.PI * Math.random();
+        const v = 2 + Math.random() * 5;
+        pushPart(fxTop, { type: 'spark', x: topBall.x, y: cy, vx: Math.cos(a) * v * 1.2, vy: Math.sin(a) * v, g: 0.15, drag: 0.98, r: 1.3 + Math.random(), age: 0, life: 16 + Math.random() * 12, c: i % 2 ? SPD_HOT : SPD_BOLT });
+      }
+      fxTop.shake = Math.max(fxTop.shake, 3);
+      topBall.squash = 0.6;
+      beep(190, 0.07, 'square', 0.08);
+    }
+    fxTop.clock += 0.2 * dt;
 
-    // Glut/Funken, die vom Ball aufsteigen (bleiben im Zeitlupen-Modus länger hängen)
+    // Funkenschweif, wird mit dem Tempo dichter
     const p = progressOf(totalTop);
-    if (Math.random() < 0.35 + 0.5 * p) {
+    if (Math.random() < 0.25 + 0.3 * dt) {
       pushPart(fxTop, {
-        type: 'spark', x: topBall.x + (Math.random() - 0.5) * 10, y: topBall.y + (Math.random() - 0.5) * 8,
-        vx: (Math.random() - 0.5) * 0.7, vy: -0.4 - Math.random() * 1.1, g: -0.004, drag: 0.99,
-        r: 1 + Math.random() * 1.4, age: 0, life: 26 + Math.random() * 22,
-        c: Math.random() < 0.55 ? KANE_GOLD : KANE_RGB,
+        type: 'spark', x: topBall.x - topBall.vx * 0.5, y: topBall.y + (Math.random() - 0.5) * 10,
+        vx: -topBall.vx * 0.25 + (Math.random() - 0.5) * 0.6, vy: (Math.random() - 0.5) * 0.8, g: 0, drag: 0.93,
+        r: 1 + Math.random() * 1.2, age: 0, life: 12 + Math.random() * 10,
+        c: Math.random() < 0.5 ? SPD_HOT : SPD_RGB,
       });
     }
 
     if (topBall.y + topBall.r > y1) {
       topBall.y = y1 - topBall.r;
-      topBall.vy = -BOUNCE_VY;
+      // Speed Ball springt so hoch, wie die Arena Platz hat (Arena wächst mit jedem gebrochenen Balken)
+      const hMax = Math.max(60, (y1 - y0 - 2 * topBall.r) * 1.3);
+      topBall.vy = -Math.sqrt(2 * GRAVITY * hMax);
       topHitCount++;
-      const dmg = factorial(topHitCount);
+      const dmg = speedDamage(topHitCount);
       totalTop += dmg;
-      addPopup('top', topBall.x, topBall.y - 8, '-' + formatNum(dmg), rgba(KANE_RGB, 1));
+      addPopup('top', topBall.x, topBall.y - 8, '-' + formatNum(dmg), rgba(SPD_RGB, 1));
       impactFx('top', topBall, topHitCount);
-      kaneHitSound(topHitCount);
+      speedHitSound(topHitCount);
       if (dealDamage('top', dmg)) finish('top');
     }
   }
 
-  // ===== Unten: Lamine Ball (Fibonacci) =====
+  // ===== Unten: Golden Ratio Ball (phi^n) =====
   if (!isFullyDepleted(botBars)) {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
@@ -401,7 +428,7 @@ function update() {
     if (botBall.y - botBall.r < y0) { botBall.y = y0 + botBall.r; botBall.vy *= -1; }
     fxBot.clock += 0.05;
 
-    // Spiral-Schweif: Partikel werden im Goldenen Winkel abgestoßen -> Sonnenblumen-Muster
+    // Spiral-Schweif im Goldenen Winkel (Sonnenblumen-Muster)
     const p = progressOf(totalBot);
     if (Math.random() < 0.45 + 0.4 * p) {
       const a = fxBot.spiral * GOLDEN_ANGLE;
@@ -409,7 +436,7 @@ function update() {
       pushPart(fxBot, {
         type: 'dot', x: botBall.x, y: botBall.y, vx: Math.cos(a) * 0.9, vy: Math.sin(a) * 0.9, g: 0, drag: 0.968,
         r: 1.3 + (fxBot.spiral % 3) * 0.5, age: 0, life: 36 + Math.random() * 14,
-        c: fxBot.spiral % 3 === 0 ? LAM_LIGHT : (fxBot.spiral % 3 === 1 ? LAM_GARNET : [255, 255, 255]),
+        c: fxBot.spiral % 3 === 0 ? PHI_LIGHT : (fxBot.spiral % 3 === 1 ? PHI_TEAL : [255, 255, 255]),
       });
     }
 
@@ -417,11 +444,11 @@ function update() {
       botBall.y = y1 - botBall.r;
       botBall.vy = -BOUNCE_VY;
       botHitCount++;
-      const dmg = fibonacci(botHitCount);
+      const dmg = phiDamage(botHitCount);
       totalBot += dmg;
-      addPopup('bot', botBall.x, botBall.y - 8, '-' + formatNum(dmg), rgba(LAM_RGB, 1));
+      addPopup('bot', botBall.x, botBall.y - 8, '-' + formatNum(dmg), rgba(PHI_RGB, 1));
       impactFx('bot', botBall, botHitCount);
-      lamineHitSound(botHitCount);
+      phiHitSound(botHitCount);
       if (dealDamage('bot', dmg)) finish('bot');
     }
   }
@@ -510,7 +537,23 @@ function drawBallBody(ball, rgb, light, dark, symbol) {
   ctx.ellipse(-ball.r * 0.36, -ball.r * 0.42, ball.r * 0.26, ball.r * 0.15, -0.6, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.fill();
-  // Trikotnummer
+  // Emblem
+  if (symbol === 'BOLT') {
+    const k = ball.r / 16;
+    ctx.beginPath();
+    ctx.moveTo(2 * k, -11 * k); ctx.lineTo(-7 * k, 2 * k); ctx.lineTo(-1 * k, 2 * k);
+    ctx.lineTo(-3 * k, 11 * k); ctx.lineTo(7 * k, -3 * k); ctx.lineTo(1 * k, -3 * k);
+    ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  // Symbol
   ctx.font = '900 ' + Math.round(ball.r * (symbol.length > 1 ? 0.88 : 1.05)) + 'px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -550,43 +593,79 @@ function drawAura(ball, rgb, p) {
   ctx.fill();
 }
 
-// Kane: Zeitwarp-Ring (Zeiger + Tick-Marken, dreht sich mit dem Zeitfaktor, also immer langsamer)
-function drawClockRing(ball, clock) {
-  const R = ball.r + 9;
-  ctx.save();
-  ctx.translate(ball.x, ball.y);
-  ctx.strokeStyle = rgba(KANE_GOLD, 0.85);
-  ctx.lineWidth = 1.5;
+// Speed: Tempo-Glut, Speedlines, elektrische Bögen um den Ball
+function drawSpeedFx(ball, clock) {
+  const t = ball.dt || 1;
+  const heat = Math.min(1, (t - 1) / 2.2);
+  // heisser Kern, wird mit dem Tempo weissglühend
+  const gr = ball.r * (1.7 + heat);
+  const g = ctx.createRadialGradient(ball.x, ball.y, 1, ball.x, ball.y, gr);
+  g.addColorStop(0, rgba(SPD_HOT, 0.25 + 0.5 * heat));
+  g.addColorStop(1, rgba(SPD_HOT, 0));
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.stroke();
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
+  ctx.arc(ball.x, ball.y, gr, 0, Math.PI * 2);
+  ctx.fill();
+  // Speedlines entgegen der Flugrichtung
+  const sp = Math.hypot(ball.vx, ball.vy);
+  if (sp > 0.1) {
+    const ux = -ball.vx / sp, uy = -ball.vy / sp;
+    const nx = -uy, ny = ux;
+    const cnt = Math.min(7, 2 + Math.floor(t * 1.6));
+    ctx.lineCap = 'round';
+    for (let i = 0; i < cnt; i++) {
+      const off = (i - (cnt - 1) / 2) * 4.2 + Math.sin(clock * 3 + i * 2) * 1.2;
+      const len = 10 + t * 9 + (i % 3) * 6;
+      const sx = ball.x + nx * off + ux * (ball.r + 2), sy = ball.y + ny * off + uy * (ball.r + 2);
+      ctx.strokeStyle = rgba(i % 2 ? SPD_HOT : SPD_RGB, 0.65);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + ux * len, sy + uy * len);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+  }
+  // elektrische Bögen
+  if (Math.random() < 0.18 + 0.3 * heat) {
+    const pts = boltPoints(ball.x + Math.cos(clock) * ball.r, ball.y + Math.sin(clock) * ball.r, clock + (Math.random() - 0.5), ball.r * 1.3 + 8);
+    ctx.strokeStyle = rgba(SPD_BOLT, 0.95);
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * R, Math.sin(a) * R);
-    ctx.lineTo(Math.cos(a) * (R + (i % 3 === 0 ? 5 : 3)), Math.sin(a) * (R + (i % 3 === 0 ? 5 : 3)));
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.stroke();
   }
-  ctx.strokeStyle = rgba(KANE_GOLD, 0.95);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(Math.cos(clock) * R, Math.sin(clock) * R);
-  ctx.stroke();
-  ctx.restore();
 }
 
-// Lamine: Satelliten im Goldenen Winkel (kleine Sonnenblumen-Galaxie um den Ball)
-function drawSatellites(ball, clock, hits) {
+// Golden Ratio: rotierende goldene Spirale + Satelliten im Goldenen Winkel
+function drawPhiFx(ball, clock, hits) {
+  ctx.save();
+  ctx.translate(ball.x, ball.y);
+  for (let arm = 0; arm < 2; arm++) {
+    ctx.beginPath();
+    const steps = 40;
+    for (let i = 0; i <= steps; i++) {
+      const u = i / steps;
+      const th = clock * 1.4 + arm * Math.PI + u * 3 * Math.PI / 2 * 2;
+      const rad = ball.r * 0.95 + 24 * (Math.pow(PHI, 3 * u) - 1) / (Math.pow(PHI, 3) - 1);
+      const x = Math.cos(th) * rad, y = Math.sin(th) * rad;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = rgba(arm ? PHI_TEAL : PHI_LIGHT, 0.75);
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  }
+  ctx.restore();
   const n = Math.min(21, 3 + Math.floor(hits / 3));
   for (let i = 0; i < n; i++) {
-    const a = i * GOLDEN_ANGLE + clock;
-    const rad = ball.r + 6 + 2.6 * Math.sqrt(i);
+    const a = i * GOLDEN_ANGLE - clock * 0.8;
+    const rad = ball.r + 8 + 2.4 * Math.sqrt(i);
     const x = ball.x + Math.cos(a) * rad;
     const y = ball.y + Math.sin(a) * rad;
     ctx.beginPath();
     ctx.arc(x, y, 1.3 + (i % 3) * 0.5, 0, Math.PI * 2);
-    ctx.fillStyle = i % 3 === 0 ? rgba(LAM_LIGHT, 0.95) : (i % 3 === 1 ? rgba(LAM_GARNET, 0.95) : 'rgba(255,255,255,0.95)');
+    ctx.fillStyle = i % 3 === 0 ? rgba(PHI_LIGHT, 0.95) : (i % 3 === 1 ? rgba(PHI_TEAL, 0.95) : 'rgba(255,255,255,0.95)');
     ctx.fill();
   }
 }
@@ -603,6 +682,14 @@ function drawParticles(fx, confettiPass) {
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x - p.vx * 2.2, p.y - p.vy * 2.2);
+      ctx.stroke();
+    } else if (p.type === 'bolt') {
+      ctx.strokeStyle = rgba(p.c, a);
+      ctx.lineWidth = p.r * a + 0.4;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.pts[0][0], p.pts[0][1]);
+      for (let k = 1; k < p.pts.length; k++) ctx.lineTo(p.pts[k][0], p.pts[k][1]);
       ctx.stroke();
     } else if (p.type === 'dot') {
       ctx.beginPath();
@@ -730,15 +817,15 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   drawSide({
-    side: 'top', title: 'KANE BALL', symbol: '9',
-    rgb: KANE_RGB, light: KANE_LIGHT, dark: KANE_DARK, gold: KANE_GOLD,
-    trailNear: KANE_GOLD, trailFar: KANE_RGB,
+    side: 'top', title: 'SPEED BALL', symbol: 'BOLT',
+    rgb: SPD_RGB, light: SPD_LIGHT, dark: SPD_DARK, gold: SPD_HOT,
+    trailNear: SPD_HOT, trailFar: SPD_RGB,
     ball: topBall, bars: topBars, fx: fxTop, total: totalTop,
     labelY0: TOP_LABEL_Y0, labelY1: TOP_LABEL_Y1,
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
-    drawFx: () => drawClockRing(topBall, fxTop.clock),
-    info: () => 'DAMAGE: ' + formatNum(factorial(topHitCount + 1)) + '  |  SPEED: ' + kaneDt(topHitCount).toFixed(2) + 'x',
+    drawFx: () => drawSpeedFx(topBall, fxTop.clock),
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  SPEED: ' + speedDt(topHitCount).toFixed(2) + 'x',
   });
 
   // VS
@@ -749,15 +836,15 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'LAMINE BALL', symbol: '19',
-    rgb: LAM_RGB, light: LAM_LIGHT, dark: LAM_DARK, gold: LAM_GARNET,
-    trailNear: LAM_LIGHT, trailFar: LAM_GARNET,
+    side: 'bot', title: 'GOLDEN RATIO BALL', symbol: '\u03c6',
+    rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
+    trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
     labelY0: BOT_LABEL_Y0, labelY1: BOT_LABEL_Y1,
     arenaY0: BOT_ARENA_Y0, arenaY1: BOT_ARENA_Y1,
     checkerY0: BOT_CHECKER_Y0, checkerY1: BOT_CHECKER_Y1,
-    drawFx: () => drawSatellites(botBall, fxBot.clock, botHitCount),
-    info: () => 'DAMAGE: ' + formatNum(fibonacci(botHitCount + 1)),
+    drawFx: () => drawPhiFx(botBall, fxBot.clock, botHitCount),
+    info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)),
   });
 }
 
