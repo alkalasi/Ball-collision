@@ -436,7 +436,7 @@ function update() {
       totalBot += dmg;
       if (b.n % 3 === 0 || dmg > 1e6) addPopup('bot', b.x, b.y - 8, '-' + formatNum(dmg), rgba(b.pal.rgb, 1));
       impactFx('bot', b, b.n);
-      fibHitSound(b.id - 1, b.n);
+      // Fibonacci-Baelle: kein Sound
       if (dealDamage('bot', dmg)) finish('bot');
     }
   }
