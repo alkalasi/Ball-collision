@@ -114,11 +114,11 @@ const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
 // Grow Ball: Schaden GRW_C * n^GRW_P, Radius waechst mit jedem Treffer
-const GRW_C = 120;        // Basisschaden
+const GRW_C = 75;        // Basisschaden
 const GRW_P = 7;          // Exponent des Schadens
 const GRW_R0 = 14;        // Startradius
-const GRW_RK = 0.45;      // Radiuszuwachs pro Treffer
-const GRW_RMAX = 40;      // maximaler Radius
+const GRW_RK = 1.2;      // Radiuszuwachs pro Treffer
+const GRW_RMAX = 60;      // maximaler Radius
 const GRW_JUMP = 0.96;    // Anteil der freien Arenahoehe, der pro Sprung genutzt wird
 function growR(n) { return Math.min(GRW_RMAX, GRW_R0 + GRW_RK * n); }
 function growDamage(n) { return Math.round(GRW_C * Math.pow(n, GRW_P)); }
