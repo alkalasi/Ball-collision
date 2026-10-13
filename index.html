@@ -91,15 +91,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // ===== Farben (RGB-Arrays, damit Glow/Alpha einfach geht) =====
-const SPD_RGB    = [255, 112, 18];   // Speed Ball - Orange
-const SPD_LIGHT  = [255, 190, 110];
-const SPD_DARK   = [150, 55, 0];
-const SPD_HOT    = [255, 244, 176];  // weissglühend
-const SPD_BOLT   = [70, 190, 255];   // elektrisches Blau
-const PHI_RGB    = [214, 158, 20];   // Golden Ratio Ball - Gold
-const PHI_LIGHT  = [255, 226, 128];
-const PHI_DARK   = [122, 82, 0];
-const PHI_TEAL   = [18, 150, 128];   // Smaragd-Akzent
+const SPD_RGB    = [226, 28, 36];   // Speed Ball - Rot
+const SPD_LIGHT  = [255, 150, 140];
+const SPD_DARK   = [120, 0, 8];
+const SPD_HOT    = [255, 226, 205];  // weissglühend
+const SPD_BOLT   = [255, 140, 40];   // Funken Orange
+const PHI_RGB    = [250, 204, 10];   // Double Ball - Gelb
+const PHI_LIGHT  = [255, 244, 150];
+const PHI_DARK   = [150, 108, 0];
+const PHI_TEAL   = [255, 160, 20];   // Amber-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -123,7 +123,8 @@ function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-function phiDamage(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
+function phiDamage(n) { return Math.pow(2, n - 1); } // Double: 1, 2, 4, 8 ...
+const DBL_DT = 0.71;      // Tempo des Double Balls (konstant)
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -223,8 +224,8 @@ function impactFx(side, ball, n) {
   } else {
     // Golden Ratio: Goldener-Winkel-Burst + Ringe im Verhältnis phi
     fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.0, life: 24, c: PHI_LIGHT, w: 3.5 });
-    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI, grow: 3.0 * PHI, life: 24, c: PHI_RGB, w: 3 });
-    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI * PHI, grow: 3.0 * PHI * PHI, life: 24, c: PHI_TEAL, w: 2.5 });
+    fx.rings.push({ x: ball.x, y: fy, r: 10, grow: 6.0, life: 24, c: PHI_RGB, w: 3 });
+    fx.rings.push({ x: ball.x, y: fy, r: 20, grow: 12.0, life: 24, c: PHI_TEAL, w: 2.5 });
     const cnt = 18 + Math.min(28, Math.floor(n / 3));
     for (let i = 0; i < cnt; i++) {
       const a = i * GOLDEN_ANGLE;
@@ -319,7 +320,7 @@ function init() {
   botBall = {
     x: W / 2, y: BOT_ARENA_Y0 + ARENA_H / 2,
     vx: Math.cos(bAngle) * BALL_SPEED, vy: Math.sin(bAngle) * BALL_SPEED,
-    r: 16, dt: 1, squash: 0, trail: [],
+    r: 16, dt: DBL_DT, squash: 0, trail: [],
   };
   topBars = BAR_HEALTHS.slice();
   botBars = BAR_HEALTHS.slice();
@@ -415,18 +416,20 @@ function update() {
     }
   }
 
-  // ===== Unten: Golden Ratio Ball (phi^n) =====
+  // ===== Unten: Double Ball (2^(n-1)) =====
   if (!isFullyDepleted(botBars)) {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
-    botBall.vy += GRAVITY;
+    const dtB = DBL_DT;
+    botBall.dt = dtB;
+    botBall.vy += GRAVITY * dtB;
     if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
-    botBall.x += botBall.vx;
-    botBall.y += botBall.vy;
+    botBall.x += botBall.vx * dtB;
+    botBall.y += botBall.vy * dtB;
     if (botBall.x - botBall.r < x0) { botBall.x = x0 + botBall.r; botBall.vx *= -1; }
     if (botBall.x + botBall.r > x1) { botBall.x = x1 - botBall.r; botBall.vx *= -1; }
     if (botBall.y - botBall.r < y0) { botBall.y = y0 + botBall.r; botBall.vy *= -1; }
-    fxBot.clock += 0.05;
+    fxBot.clock += 0.05 * dtB;
 
     // Spiral-Schweif im Goldenen Winkel (Sonnenblumen-Muster)
     const p = progressOf(totalBot);
@@ -836,7 +839,7 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'FIBONACCI BALL', symbol: 'F',
+    side: 'bot', title: 'DOUBLE BALL', symbol: 'x2',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
