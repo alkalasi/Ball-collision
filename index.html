@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Exponential Ball vs Fibonacci Ball</title>
+<title>Golden Ratio Ball vs Exponential Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -116,7 +116,7 @@ const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
 const SPD_C = 120;        // Basisschaden
 const SPD_P = 5;          // Exponent des Schadens
-const SPD_DT0 = 0.5;      // Starttempo
+const SPD_DT0 = 0.49;      // Starttempo
 const SPD_K = 0;       // konstantes Tempo
 const EXP_S = Math.E;      // Startwert e^1, dann e^2, e^3 ...
 const EXP_BASE = Math.E;  // Wachstumsfaktor pro Treffer
@@ -125,7 +125,7 @@ function speedDamage(n) { return Math.round(EXP_S * Math.pow(EXP_BASE, n - 1)); 
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-function phiDamage(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
+function phiDamage(n) { return Math.round(Math.pow(PHI, n)); } // phi^n: 2, 3, 4, 7, 11 ...
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -837,7 +837,7 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'FIBONACCI BALL', symbol: 'F',
+    side: 'bot', title: 'GOLDEN RATIO BALL', symbol: '\u03c6',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
