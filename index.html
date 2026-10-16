@@ -116,9 +116,9 @@ const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
 const SPD_C = 120;        // Basisschaden
 const SPD_P = 5;          // Exponent des Schadens
-const SPD_DT0 = 0.48;      // Starttempo
+const SPD_DT0 = 0.5;      // Starttempo
 const SPD_K = 0;       // konstantes Tempo
-const EXP_S = 5;          // Startwert des Schadens
+const EXP_S = Math.E;      // Startwert e^1, dann e^2, e^3 ...
 const EXP_BASE = Math.E;  // Wachstumsfaktor pro Treffer
 function speedDt(hits) { return SPD_DT0 * (1 + SPD_K * hits); }
 function speedDamage(n) { return Math.round(EXP_S * Math.pow(EXP_BASE, n - 1)); }
@@ -826,7 +826,7 @@ function draw() {
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
     drawFx: () => drawSpeedFx(topBall, fxTop.clock),
-    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  START: ' + EXP_S + '  x e per hit',
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  e^' + (topHitCount + 1),
   });
 
   // VS
