@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Golden Ratio Ball vs Exponential Ball</title>
+<title>Fibonacci Ball vs Speed Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -91,15 +91,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // ===== Farben (RGB-Arrays, damit Glow/Alpha einfach geht) =====
-const SPD_RGB    = [214, 28, 150];   // Exponential Ball - Magenta
-const SPD_LIGHT  = [255, 150, 224];
-const SPD_DARK   = [104, 0, 76];
-const SPD_HOT    = [255, 222, 244];  // helles Rosa-Weiss
-const SPD_BOLT   = [150, 70, 255];   // Violett-Funken
-const PHI_RGB    = [214, 158, 20];   // Golden Ratio Ball - Gold
-const PHI_LIGHT  = [255, 226, 128];
-const PHI_DARK   = [122, 82, 0];
-const PHI_TEAL   = [18, 150, 128];   // Smaragd-Akzent
+const SPD_RGB    = [57, 255, 20];   // Speed Ball - Neongruen
+const SPD_LIGHT  = [190, 255, 150];
+const SPD_DARK   = [8, 110, 0];
+const SPD_HOT    = [235, 255, 190];  // weissglühend
+const SPD_BOLT   = [255, 255, 40];   // Neongelb
+const PHI_RGB    = [30, 100, 235];   // Fibonacci Ball - Blau
+const PHI_LIGHT  = [150, 195, 255];
+const PHI_DARK   = [8, 38, 140];
+const PHI_TEAL   = [70, 200, 255];   // Cyan-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -114,18 +114,16 @@ const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
-const SPD_C = 120;        // Basisschaden
-const SPD_P = 5;          // Exponent des Schadens
-const SPD_DT0 = 0.49;      // Starttempo
-const SPD_K = 0;       // konstantes Tempo
-const EXP_S = Math.E;      // Startwert e^1, dann e^2, e^3 ...
-const EXP_BASE = Math.E;  // Wachstumsfaktor pro Treffer
-function speedDt(hits) { return SPD_DT0 * (1 + SPD_K * hits); }
-function speedDamage(n) { return Math.round(EXP_S * Math.pow(EXP_BASE, n - 1)); }
+const SPD_C = 50000000;
+const SPD_P = 3;
+const SPD_DT0 = 0.4;
+const SPD_G = 1.03;        // Tempo-Faktor pro Treffer (exponentiell, ohne Obergrenze)
+function speedDt(hits) { return SPD_DT0 * Math.pow(SPD_G, hits); }
+function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-function phiDamage(n) { return Math.round(Math.pow(PHI, n)); } // phi^n: 2, 3, 4, 7, 11 ...
+function phiDamage(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -405,7 +403,8 @@ function update() {
     if (topBall.y + topBall.r > y1) {
       topBall.y = y1 - topBall.r;
       // Speed Ball springt so hoch, wie die Arena Platz hat (Arena wächst mit jedem gebrochenen Balken)
-      topBall.vy = -BOUNCE_VY;
+      const hMax = Math.max(60, (y1 - y0 - 2 * topBall.r) * 1.3);
+      topBall.vy = -Math.sqrt(2 * GRAVITY * hMax);
       topHitCount++;
       const dmg = speedDamage(topHitCount);
       totalTop += dmg;
@@ -597,7 +596,7 @@ function drawAura(ball, rgb, p) {
 // Speed: Tempo-Glut, Speedlines, elektrische Bögen um den Ball
 function drawSpeedFx(ball, clock) {
   const t = ball.dt || 1;
-  const heat = Math.max(0, Math.min(1, (t - 1) / 2.2));
+  const heat = Math.min(1, (t - 1) / 2.2);
   // heisser Kern, wird mit dem Tempo weissglühend
   const gr = ball.r * (1.7 + heat);
   const g = ctx.createRadialGradient(ball.x, ball.y, 1, ball.x, ball.y, gr);
@@ -609,7 +608,7 @@ function drawSpeedFx(ball, clock) {
   ctx.fill();
   // Speedlines entgegen der Flugrichtung
   const sp = Math.hypot(ball.vx, ball.vy);
-  if (false && sp > 0.1) {
+  if (sp > 0.1) {
     const ux = -ball.vx / sp, uy = -ball.vy / sp;
     const nx = -uy, ny = ux;
     const cnt = Math.min(7, 2 + Math.floor(t * 1.6));
@@ -818,7 +817,7 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   drawSide({
-    side: 'top', title: 'EXPONENTIAL BALL', symbol: 'e\u02e3',
+    side: 'top', title: 'SPEED BALL', symbol: 'BOLT',
     rgb: SPD_RGB, light: SPD_LIGHT, dark: SPD_DARK, gold: SPD_HOT,
     trailNear: SPD_HOT, trailFar: SPD_RGB,
     ball: topBall, bars: topBars, fx: fxTop, total: totalTop,
@@ -826,7 +825,7 @@ function draw() {
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
     drawFx: () => drawSpeedFx(topBall, fxTop.clock),
-    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  e^' + (topHitCount + 1),
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  SPEED: ' + speedDt(topHitCount).toFixed(2) + 'x',
   });
 
   // VS
@@ -837,7 +836,7 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'GOLDEN RATIO BALL', symbol: '\u03c6',
+    side: 'bot', title: 'FIBONACCI BALL', symbol: 'F',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
