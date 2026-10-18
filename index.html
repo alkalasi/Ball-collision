@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Fibonacci Ball vs Grow Ball</title>
+<title>Exponential Ball vs Factorial Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -91,15 +91,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // ===== Farben (RGB-Arrays, damit Glow/Alpha einfach geht) =====
-const GRW_RGB    = [255, 238, 0];    // Grow Ball - Neongelb
-const GRW_LIGHT  = [255, 250, 150];
-const GRW_DARK   = [145, 125, 0];
-const GRW_HOT    = [255, 255, 190];  // Glow
-const GRW_SPORE  = [190, 255, 40];   // Neon-Lime Sporen
-const PHI_RGB    = [30, 100, 235];   // Fibonacci Ball - Blau
-const PHI_LIGHT  = [150, 195, 255];
-const PHI_DARK   = [8, 38, 140];
-const PHI_TEAL   = [70, 200, 255];   // Cyan-Akzent
+const SPD_RGB    = [214, 28, 150];   // Exponential Ball - Magenta
+const SPD_LIGHT  = [255, 150, 224];
+const SPD_DARK   = [104, 0, 76];
+const SPD_HOT    = [255, 222, 244];  // helles Rosa-Weiss
+const SPD_BOLT   = [150, 70, 255];   // Violett-Funken
+const PHI_RGB    = [16, 168, 128];   // Factorial Ball - Smaragd
+const PHI_LIGHT  = [140, 240, 205];
+const PHI_DARK   = [0, 84, 62];
+const PHI_TEAL   = [255, 196, 40];   // Gold-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -113,22 +113,20 @@ const BOUNCE_VY = 9.487;
 const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
-// Grow Ball: Schaden GRW_C * n^GRW_P, Radius waechst mit jedem Treffer
-const GRW_C = 10000000;
-const GRW_P = 3;          // Exponent des Schadens
-const GRW_R0 = 14;        // Startradius
-const GRW_RK = 3.0;      // Radiuszuwachs pro Treffer
-const GRW_RMAX = 170;      // maximaler Radius
-const GRW_DT = 0.54;      // konstantes Tempo
-const GRW_JUMP = 0.96;    // Anteil der freien Arenahoehe, der pro Sprung genutzt wird
-const GRW_CEIL_R = 48;    // ab diesem Radius knallt der Ball gegen die Decke
-const GRW_CEIL_F = 1.15;
-function growR(n) { return Math.min(GRW_RMAX, GRW_R0 + GRW_RK * n); }
-function growDamage(n) { return Math.round(GRW_C * Math.pow(n, GRW_P)); }
+// Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
+const SPD_C = 120;        // Basisschaden
+const SPD_P = 5;          // Exponent des Schadens
+const SPD_DT0 = 0.5;      // Starttempo
+const SPD_K = 0;       // konstantes Tempo
+const EXP_S = Math.E;      // Startwert e^1, dann e^2, e^3 ...
+const EXP_BASE = Math.E;  // Wachstumsfaktor pro Treffer
+function speedDt(hits) { return SPD_DT0 * (1 + SPD_K * hits); }
+function speedDamage(n) { return Math.round(EXP_S * Math.pow(EXP_BASE, n - 1)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-function phiDamage(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n)
+const FAC_DT = 0.25;       // konstantes Tempo
+function phiDamage(n) { let f = 1; for (let i = 2; i <= n; i++) f *= i; return f; } // n!
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -153,7 +151,7 @@ function beep(freq, dur, type, vol) {
   osc.start();
   osc.stop(audioCtx.currentTime + dur);
 }
-function growHitSound(n) { beep(120 + Math.min(n, 70) * 3, 0.2, 'sine', 0.22); beep(330 + Math.min(n, 70) * 9, 0.09, 'triangle', 0.06); }
+function speedHitSound(n) { const t = speedDt(n); beep(110 + Math.min(n, 80) * 2, 0.12, 'sine', 0.2); beep(520 + t * 140, 0.05, 'sawtooth', 0.05); }
 const PHI_NOTES = [523, 659, 784, 988, 1175, 988, 784, 659];
 function phiHitSound(n) { beep(PHI_NOTES[n % PHI_NOTES.length], 0.16, 'triangle', 0.1); beep(PHI_NOTES[n % PHI_NOTES.length] * PHI / 1.0 / 2, 0.1, 'sine', 0.04); }
 function breakSound() {
@@ -207,19 +205,24 @@ function impactFx(side, ball, n) {
   const fy = ball.y + ball.r;
   ball.squash = 1;
   if (side === 'top') {
-    // Grow: Wachstumsring vom alten zum neuen Radius, Sporen, Blatt-Burst
-    const r0 = ball.prevR || ball.r;
-    fx.rings.push({ x: ball.x, y: fy, r: 6, grow: 3.4, life: 22, c: GRW_HOT, w: 4 });
-    fx.rings.push({ x: ball.x, y: fy, r: 2, grow: 2.2, life: 30, c: GRW_RGB, w: 5 });
-    fx.rings.push({ x: ball.x, y: ball.y, r: r0 + 2, grow: 1.6, life: 26, c: GRW_SPORE, w: 3, round: true });
-    const cnt = 12 + Math.min(24, Math.floor(n / 3));
+    // Speed: Blitze, Funken-Fächer, Überschallring
+    const t = speedDt(n);
+    fx.rings.push({ x: ball.x, y: fy, r: 6, grow: 3.8 + t, life: 22, c: SPD_HOT, w: 4 });
+    fx.rings.push({ x: ball.x, y: fy, r: 2, grow: 2.4 + t * 0.8, life: 30, c: SPD_RGB, w: 5 });
+    if (t > 1.6) fx.rings.push({ x: ball.x, y: fy, r: 4, grow: 9, life: 14, c: SPD_BOLT, w: 3, flat: true });
+    const nb = Math.min(6, 2 + Math.floor(t));
+    for (let i = 0; i < nb; i++) {
+      const ang = -Math.PI * (0.1 + 0.8 * Math.random());
+      pushPart(fx, { type: 'bolt', pts: boltPoints(ball.x, fy, ang, 38 + Math.random() * 34), x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 12, r: 2.2, c: i % 2 ? SPD_BOLT : SPD_HOT });
+    }
+    const cnt = 14 + Math.min(26, Math.floor(n / 3));
     for (let i = 0; i < cnt; i++) {
       const a = -Math.PI * Math.random();
-      const v = 2.2 + Math.random() * 6;
-      const col = Math.random() < 0.4 ? GRW_HOT : (Math.random() < 0.6 ? GRW_RGB : GRW_SPORE);
-      pushPart(fx, { type: 'dot', x: ball.x, y: fy, vx: Math.cos(a) * v * 1.2, vy: Math.sin(a) * v, g: 0.16, drag: 0.975, r: 1.8 + Math.random() * 2, age: 0, life: 28 + Math.random() * 20, c: col });
+      const v = 3 + Math.random() * 7.5;
+      const col = Math.random() < 0.5 ? SPD_HOT : (Math.random() < 0.6 ? SPD_RGB : SPD_BOLT);
+      pushPart(fx, { type: 'spark', x: ball.x, y: fy, vx: Math.cos(a) * v * 1.25, vy: Math.sin(a) * v, g: 0.2, drag: 0.982, r: 1.3 + Math.random() * 1.6, age: 0, life: 20 + Math.random() * 18, c: col });
     }
-    fx.shake = Math.max(fx.shake, Math.min(5.5, 1 + n * 0.08));
+    fx.shake = Math.max(fx.shake, Math.min(6, 1 + t * 0.9));
   } else {
     // Golden Ratio: Goldener-Winkel-Burst + Ringe im Verhältnis phi
     fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.0, life: 24, c: PHI_LIGHT, w: 3.5 });
@@ -243,7 +246,7 @@ function onBarBreak(side, idx) {
   fx.flash = 1;
   fx.shake = Math.max(fx.shake, 9);
   const y = (side === 'top' ? TOP_ARENA_Y1 : BOT_ARENA_Y1) + idx * BAR_H + BAR_H / 2;
-  const palette = side === 'top' ? [GRW_RGB, GRW_HOT, GRW_SPORE, GRW_LIGHT] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
+  const palette = side === 'top' ? [SPD_RGB, SPD_HOT, SPD_BOLT, SPD_LIGHT] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
   for (let i = 0; i < 46; i++) {
     pushPart(fx, {
       type: 'confetti', x: 8 + Math.random() * (W - 16), y,
@@ -264,7 +267,7 @@ function finish(side) {
   fx.flash = 1;
   fx.shake = 10;
   const ball = side === 'top' ? topBall : botBall;
-  const palette = side === 'top' ? [GRW_RGB, GRW_HOT, GRW_SPORE] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
+  const palette = side === 'top' ? [SPD_RGB, SPD_HOT, SPD_BOLT] : [PHI_RGB, PHI_TEAL, [255, 255, 255], PHI_LIGHT];
   for (let i = 0; i < 110; i++) {
     const a = -Math.PI * Math.random();
     const v = 2 + Math.random() * 8;
@@ -313,7 +316,7 @@ function init() {
   topBall = {
     x: W / 2, y: TOP_ARENA_Y0 + ARENA_H / 2,
     vx: Math.cos(tAngle) * BALL_SPEED, vy: Math.sin(tAngle) * BALL_SPEED,
-    r: GRW_R0, dt: 1, squash: 0, trail: [],
+    r: 16, dt: SPD_DT0, squash: 0, trail: [],
   };
   const bAngle = Math.random() * Math.PI * 2;
   botBall = {
@@ -361,11 +364,11 @@ function update() {
   updateFx();
   if (gameOver) return;
 
-  // ===== Oben: Grow Ball =====
+  // ===== Oben: Speed Ball =====
   if (!isFullyDepleted(topBars)) {
     const floor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = TOP_ARENA_Y0 + 10, y1 = floor - 10;
-    const dt = GRW_DT;
+    const dt = speedDt(topHitCount);
     topBall.dt = dt;
     topBall.vy += GRAVITY * dt;
     if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
@@ -377,11 +380,11 @@ function update() {
       topBall.y = y0 + topBall.r; topBall.vy *= -1;
       // Deckenknall: Funken nach unten, Ring, Shake
       const cy = y0;
-      fxTop.rings.push({ x: topBall.x, y: cy, r: 5, grow: 3.2, life: 18, c: GRW_SPORE, w: 3 });
+      fxTop.rings.push({ x: topBall.x, y: cy, r: 5, grow: 3.2, life: 18, c: SPD_BOLT, w: 3 });
       for (let i = 0; i < 12; i++) {
         const a = Math.PI * Math.random();
         const v = 2 + Math.random() * 5;
-        pushPart(fxTop, { type: 'spark', x: topBall.x, y: cy, vx: Math.cos(a) * v * 1.2, vy: Math.sin(a) * v, g: 0.15, drag: 0.98, r: 1.3 + Math.random(), age: 0, life: 16 + Math.random() * 12, c: i % 2 ? GRW_HOT : GRW_SPORE });
+        pushPart(fxTop, { type: 'spark', x: topBall.x, y: cy, vx: Math.cos(a) * v * 1.2, vy: Math.sin(a) * v, g: 0.15, drag: 0.98, r: 1.3 + Math.random(), age: 0, life: 16 + Math.random() * 12, c: i % 2 ? SPD_HOT : SPD_BOLT });
       }
       fxTop.shake = Math.max(fxTop.shake, 3);
       topBall.squash = 0.6;
@@ -389,31 +392,27 @@ function update() {
     }
     fxTop.clock += 0.2 * dt;
 
-    // Sporen, die vom Ball aufsteigen (mehr, je groesser er ist)
+    // Funkenschweif, wird mit dem Tempo dichter
     const p = progressOf(totalTop);
-    if (Math.random() < 0.3 + 0.012 * topBall.r) {
+    if (Math.random() < 0.25 + 0.3 * dt) {
       pushPart(fxTop, {
-        type: 'dot', x: topBall.x + (Math.random() - 0.5) * topBall.r * 1.6, y: topBall.y + (Math.random() - 0.5) * topBall.r,
-        vx: (Math.random() - 0.5) * 0.5, vy: -0.4 - Math.random() * 0.8, g: -0.004, drag: 0.99,
-        r: 1 + Math.random() * 1.4, age: 0, life: 26 + Math.random() * 20,
-        c: Math.random() < 0.5 ? GRW_SPORE : GRW_HOT,
+        type: 'spark', x: topBall.x - topBall.vx * 0.5, y: topBall.y + (Math.random() - 0.5) * 10,
+        vx: -topBall.vx * 0.25 + (Math.random() - 0.5) * 0.6, vy: (Math.random() - 0.5) * 0.8, g: 0, drag: 0.93,
+        r: 1 + Math.random() * 1.2, age: 0, life: 12 + Math.random() * 10,
+        c: Math.random() < 0.5 ? SPD_HOT : SPD_RGB,
       });
     }
 
     if (topBall.y + topBall.r > y1) {
       topBall.y = y1 - topBall.r;
-      // Sprunghoehe: so hoch, wie die Arena (abzueglich Ballgroesse) Platz hat
-      const hMax = Math.max(50, (y1 - y0 - 2 * topBall.r) * (topBall.r >= GRW_CEIL_R ? GRW_CEIL_F : GRW_JUMP));
-      topBall.vy = -Math.sqrt(2 * GRAVITY * hMax);
+      // Speed Ball springt so hoch, wie die Arena Platz hat (Arena wächst mit jedem gebrochenen Balken)
+      topBall.vy = -BOUNCE_VY;
       topHitCount++;
-      topBall.prevR = topBall.r;
-      topBall.r = growR(topHitCount);
-      topBall.y = y1 - topBall.r;
-      const dmg = growDamage(topHitCount);
+      const dmg = speedDamage(topHitCount);
       totalTop += dmg;
-      addPopup('top', topBall.x, topBall.y - topBall.r - 4, '-' + formatNum(dmg), rgba(GRW_RGB, 1));
+      addPopup('top', topBall.x, topBall.y - 8, '-' + formatNum(dmg), rgba(SPD_RGB, 1));
       impactFx('top', topBall, topHitCount);
-      growHitSound(topHitCount);
+      speedHitSound(topHitCount);
       if (dealDamage('top', dmg)) finish('top');
     }
   }
@@ -422,14 +421,15 @@ function update() {
   if (!isFullyDepleted(botBars)) {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
-    botBall.vy += GRAVITY;
+    botBall.dt = FAC_DT;
+    botBall.vy += GRAVITY * FAC_DT;
     if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
-    botBall.x += botBall.vx;
-    botBall.y += botBall.vy;
+    botBall.x += botBall.vx * FAC_DT;
+    botBall.y += botBall.vy * FAC_DT;
     if (botBall.x - botBall.r < x0) { botBall.x = x0 + botBall.r; botBall.vx *= -1; }
     if (botBall.x + botBall.r > x1) { botBall.x = x1 - botBall.r; botBall.vx *= -1; }
     if (botBall.y - botBall.r < y0) { botBall.y = y0 + botBall.r; botBall.vy *= -1; }
-    fxBot.clock += 0.05;
+    fxBot.clock += 0.05 * FAC_DT;
 
     // Spiral-Schweif im Goldenen Winkel (Sonnenblumen-Muster)
     const p = progressOf(totalBot);
@@ -541,16 +541,16 @@ function drawBallBody(ball, rgb, light, dark, symbol) {
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.fill();
   // Emblem
-  if (symbol === 'ARROW') {
+  if (symbol === 'BOLT') {
     const k = ball.r / 16;
     ctx.beginPath();
-    ctx.moveTo(0, -10 * k); ctx.lineTo(8 * k, 0); ctx.lineTo(3 * k, 0); ctx.lineTo(3 * k, 9 * k);
-    ctx.lineTo(-3 * k, 9 * k); ctx.lineTo(-3 * k, 0); ctx.lineTo(-8 * k, 0);
+    ctx.moveTo(2 * k, -11 * k); ctx.lineTo(-7 * k, 2 * k); ctx.lineTo(-1 * k, 2 * k);
+    ctx.lineTo(-3 * k, 11 * k); ctx.lineTo(7 * k, -3 * k); ctx.lineTo(1 * k, -3 * k);
     ctx.closePath();
     ctx.fillStyle = '#fff';
     ctx.fill();
     ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(1.4, 1.6 * k * 0.8);
+    ctx.lineWidth = 1.6;
     ctx.strokeStyle = 'rgba(0,0,0,0.65)';
     ctx.stroke();
     ctx.restore();
@@ -596,40 +596,47 @@ function drawAura(ball, rgb, p) {
   ctx.fill();
 }
 
-// Grow: pulsierender Wachstums-Glow, rotierender gestrichelter Ring, Plus-Zeichen im Orbit
-function drawGrowFx(ball, clock, hits) {
-  const pulse = 0.5 + 0.5 * Math.sin(clock * 2.2);
-  const gr = ball.r * (1.7 + 0.35 * pulse);
+// Speed: Tempo-Glut, Speedlines, elektrische Bögen um den Ball
+function drawSpeedFx(ball, clock) {
+  const t = ball.dt || 1;
+  const heat = Math.max(0, Math.min(1, (t - 1) / 2.2));
+  // heisser Kern, wird mit dem Tempo weissglühend
+  const gr = ball.r * (1.7 + heat);
   const g = ctx.createRadialGradient(ball.x, ball.y, 1, ball.x, ball.y, gr);
-  g.addColorStop(0, rgba(GRW_HOT, 0.35 + 0.25 * pulse));
-  g.addColorStop(1, rgba(GRW_HOT, 0));
+  g.addColorStop(0, rgba(SPD_HOT, 0.25 + 0.5 * heat));
+  g.addColorStop(1, rgba(SPD_HOT, 0));
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, gr, 0, Math.PI * 2);
   ctx.fill();
-  // gestrichelter Ring
-  ctx.save();
-  ctx.translate(ball.x, ball.y);
-  ctx.rotate(clock * 0.8);
-  ctx.setLineDash([5, 6]);
-  ctx.strokeStyle = rgba(GRW_SPORE, 0.85);
-  ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  ctx.arc(0, 0, ball.r + 6, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-  // Plus-Zeichen im Orbit
-  const n = Math.min(8, 2 + Math.floor(hits / 7));
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 - clock * 0.9;
-    const rad = ball.r + 14 + 2 * Math.sin(clock * 2 + i);
-    const x = ball.x + Math.cos(a) * rad, y = ball.y + Math.sin(a) * rad;
-    ctx.strokeStyle = rgba(i % 2 ? GRW_HOT : GRW_SPORE, 0.95);
-    ctx.lineWidth = 2;
+  // Speedlines entgegen der Flugrichtung
+  const sp = Math.hypot(ball.vx, ball.vy);
+  if (false && sp > 0.1) {
+    const ux = -ball.vx / sp, uy = -ball.vy / sp;
+    const nx = -uy, ny = ux;
+    const cnt = Math.min(7, 2 + Math.floor(t * 1.6));
+    ctx.lineCap = 'round';
+    for (let i = 0; i < cnt; i++) {
+      const off = (i - (cnt - 1) / 2) * 4.2 + Math.sin(clock * 3 + i * 2) * 1.2;
+      const len = 10 + t * 9 + (i % 3) * 6;
+      const sx = ball.x + nx * off + ux * (ball.r + 2), sy = ball.y + ny * off + uy * (ball.r + 2);
+      ctx.strokeStyle = rgba(i % 2 ? SPD_HOT : SPD_RGB, 0.65);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + ux * len, sy + uy * len);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+  }
+  // elektrische Bögen
+  if (Math.random() < 0.18 + 0.3 * heat) {
+    const pts = boltPoints(ball.x + Math.cos(clock) * ball.r, ball.y + Math.sin(clock) * ball.r, clock + (Math.random() - 0.5), ball.r * 1.3 + 8);
+    ctx.strokeStyle = rgba(SPD_BOLT, 0.95);
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y);
-    ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3);
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.stroke();
   }
 }
@@ -710,8 +717,7 @@ function drawRings(fx) {
     ctx.strokeStyle = rgba(r.c, a);
     ctx.lineWidth = r.w * a + 0.5;
     ctx.beginPath();
-    if (r.round) ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
-    else if (r.flat) ctx.ellipse(r.x, r.y, r.r * 2.2, r.r * 0.22, 0, 0, Math.PI * 2);
+    if (r.flat) ctx.ellipse(r.x, r.y, r.r * 2.2, r.r * 0.22, 0, 0, Math.PI * 2);
     else ctx.ellipse(r.x, r.y, r.r, r.r * 0.3, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
@@ -814,15 +820,15 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   drawSide({
-    side: 'top', title: 'GROW BALL', symbol: 'ARROW',
-    rgb: GRW_RGB, light: GRW_LIGHT, dark: GRW_DARK, gold: GRW_HOT,
-    trailNear: GRW_HOT, trailFar: GRW_RGB,
+    side: 'top', title: 'EXPONENTIAL BALL', symbol: 'e\u02e3',
+    rgb: SPD_RGB, light: SPD_LIGHT, dark: SPD_DARK, gold: SPD_HOT,
+    trailNear: SPD_HOT, trailFar: SPD_RGB,
     ball: topBall, bars: topBars, fx: fxTop, total: totalTop,
     labelY0: TOP_LABEL_Y0, labelY1: TOP_LABEL_Y1,
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
-    drawFx: () => drawGrowFx(topBall, fxTop.clock, topHitCount),
-    info: () => 'DAMAGE: ' + formatNum(growDamage(topHitCount + 1)) + '  |  SIZE: ' + topBall.r.toFixed(0) + ' px',
+    drawFx: () => drawSpeedFx(topBall, fxTop.clock),
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  e^' + (topHitCount + 1),
   });
 
   // VS
@@ -833,7 +839,7 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'FIBONACCI BALL', symbol: 'F',
+    side: 'bot', title: 'FACTORIAL BALL', symbol: '!',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
