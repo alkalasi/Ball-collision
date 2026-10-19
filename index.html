@@ -123,9 +123,12 @@ function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-const SPLIT_C = 800000;   // Basisschaden
+const SPLIT_C = 23500000;   // Basisschaden
 const SPLIT_P = 2;         // Exponent
-const SPLIT_MAX = 24;      // max. Anzahl Baelle
+const SPLIT_MAX = 24;
+const SPLIT_DT = 0.6;      // Tempo der Baelle
+const SPLIT_GAP = 160;     // Frames zwischen zwei Teilungen
+let splitTimer = 0;
 function splitDamage(n) { return Math.round(SPLIT_C * Math.pow(n, SPLIT_P)); }
 function phiDamage(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
 
@@ -328,6 +331,7 @@ function init() {
   topBars = BAR_HEALTHS.slice();
   botBars = BAR_HEALTHS.slice();
   botClones = [];
+  splitTimer = 0;
   topHitCount = 0;
   botHitCount = 0;
   totalTop = 0;
@@ -434,14 +438,15 @@ function update() {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
     soundBudget = 1;
+    splitTimer++;
     let fxBudget = 3;
     const balls = [botBall, ...botClones];
     for (let bi = 0; bi < balls.length; bi++) {
       const b = balls[bi];
-      b.vy += GRAVITY;
+      b.vy += GRAVITY * SPLIT_DT;
       if (b.vy > MAX_FALL_SPEED) b.vy = MAX_FALL_SPEED;
-      b.x += b.vx;
-      b.y += b.vy;
+      b.x += b.vx * SPLIT_DT;
+      b.y += b.vy * SPLIT_DT;
       if (b.x - b.r < x0) { b.x = x0 + b.r; b.vx *= -1; }
       if (b.x + b.r > x1) { b.x = x1 - b.r; b.vx *= -1; }
       if (b.y - b.r < y0) { b.y = y0 + b.r; b.vy *= -1; }
@@ -456,7 +461,8 @@ function update() {
         if (lead || fxBudget > 0) { impactFx('bot', b, botHitCount); if (!lead) fxBudget--; }
         else b.squash = 1;
         if (soundBudget > 0) { phiHitSound(botHitCount); soundBudget--; }
-        if (botClones.length + 1 < SPLIT_MAX) {
+        if (botClones.length + 1 < SPLIT_MAX && splitTimer >= SPLIT_GAP) {
+          splitTimer = 0;
           botClones.push({ x: b.x, y: b.y, vx: (-b.vx) || BALL_SPEED, vy: -BOUNCE_VY * (0.5 + 0.5 * Math.random()), r: b.r, dt: 1, squash: 1, trail: [] });
           fx_split(b);
         }
