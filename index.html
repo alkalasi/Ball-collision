@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Gravity Ball vs Speed Ball</title>
+<title>Speed Ball vs Double Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -96,10 +96,10 @@ const SPD_LIGHT  = [255, 190, 110];
 const SPD_DARK   = [150, 55, 0];
 const SPD_HOT    = [255, 244, 176];  // weissglühend
 const SPD_BOLT   = [70, 190, 255];   // elektrisches Blau
-const PHI_RGB    = [92, 64, 214];   // Gravity Ball - Indigo
-const PHI_LIGHT  = [170, 160, 255];
-const PHI_DARK   = [28, 16, 100];
-const PHI_TEAL   = [235, 70, 255];   // Magenta-Akzent
+const PHI_RGB    = [30, 100, 235];   // Double Ball - Blau
+const PHI_LIGHT  = [150, 195, 255];
+const PHI_DARK   = [8, 38, 140];
+const PHI_TEAL   = [70, 200, 255];   // Cyan-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -114,7 +114,7 @@ const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
-const SPD_C = 120;        // Basisschaden
+const SPD_C = 98;        // Basisschaden
 const SPD_P = 5;          // Exponent des Schadens
 const SPD_DT0 = 0.78;      // Starttempo
 const SPD_K = 0.035;       // Tempozuwachs pro Treffer (linear)
@@ -123,11 +123,8 @@ function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-const GRAV_C = 10000000, GRAV_P = 3;   // Schaden GRAV_C * n^GRAV_P
-const GRAV_DT0 = 0.8, GRAV_K = 0.03;   // Starttempo, Schwerkraftzuwachs pro Treffer
-function gravMul(h) { return 1 + GRAV_K * h; }
-function phiDamage(n) { return Math.round(GRAV_C * Math.pow(n, GRAV_P)); }
-function phiDamageOld(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
+function phiDamage(n) { return Math.pow(2, n - 1); } // Double: 1, 2, 4, 8 ...
+const DBL_DT = 0.71;      // Tempo des Double Balls (konstant)
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -423,9 +420,9 @@ function update() {
   if (!isFullyDepleted(botBars)) {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
-    const dtB = GRAV_DT0;
+    const dtB = DBL_DT;
     botBall.dt = dtB;
-    botBall.vy += GRAVITY * gravMul(botHitCount) * dtB;
+    botBall.vy += GRAVITY * dtB;
     if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
     botBall.x += botBall.vx * dtB;
     botBall.y += botBall.vy * dtB;
@@ -434,13 +431,14 @@ function update() {
     if (botBall.y - botBall.r < y0) { botBall.y = y0 + botBall.r; botBall.vy *= -1; }
     fxBot.clock += 0.05 * dtB;
 
-    // Schwerkraft-Sog: Partikel werden nach unten gezogen
-    const gm = gravMul(botHitCount);
-    if (Math.random() < 0.5) {
+    // Spiral-Schweif im Goldenen Winkel (Sonnenblumen-Muster)
+    const p = progressOf(totalBot);
+    if (Math.random() < 0.45 + 0.4 * p) {
+      const a = fxBot.spiral * GOLDEN_ANGLE;
       fxBot.spiral++;
       pushPart(fxBot, {
-        type: 'dot', x: botBall.x + (Math.random() - 0.5) * 22, y: botBall.y - 10 - Math.random() * 20, vx: 0, vy: 0.5, g: 0.06 * gm, drag: 0.98,
-        r: 1.3 + (fxBot.spiral % 3) * 0.5, age: 0, life: 26 + Math.random() * 12,
+        type: 'dot', x: botBall.x, y: botBall.y, vx: Math.cos(a) * 0.9, vy: Math.sin(a) * 0.9, g: 0, drag: 0.968,
+        r: 1.3 + (fxBot.spiral % 3) * 0.5, age: 0, life: 36 + Math.random() * 14,
         c: fxBot.spiral % 3 === 0 ? PHI_LIGHT : (fxBot.spiral % 3 === 1 ? PHI_TEAL : [255, 255, 255]),
       });
     }
@@ -643,24 +641,7 @@ function drawSpeedFx(ball, clock) {
   }
 }
 
-// Gravity: nach innen gezogene Ringe + dunkler Hof
-function drawGravFx(ball, clock, hits) {
-  const gm = gravMul(hits);
-  const g = ctx.createRadialGradient(ball.x, ball.y, ball.r * 0.5, ball.x, ball.y, ball.r * 3.2);
-  g.addColorStop(0, rgba(PHI_DARK, 0.45));
-  g.addColorStop(1, rgba(PHI_DARK, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * 3.2, 0, Math.PI * 2); ctx.fill();
-  const spd = 0.6 + 0.25 * gm;
-  for (let i = 0; i < 3; i++) {
-    const u = (clock * spd + i / 3) % 1;
-    const rad = ball.r * (3.2 - 2.1 * u);
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, rad, 0, Math.PI * 2);
-    ctx.strokeStyle = rgba(i % 2 ? PHI_TEAL : PHI_LIGHT, 0.15 + 0.6 * u);
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-  }
-}
+// Golden Ratio: rotierende goldene Spirale + Satelliten im Goldenen Winkel
 function drawPhiFx(ball, clock, hits) {
   ctx.save();
   ctx.translate(ball.x, ball.y);
@@ -858,15 +839,15 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'GRAVITY BALL', symbol: 'G',
+    side: 'bot', title: 'DOUBLE BALL', symbol: 'x2',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
     labelY0: BOT_LABEL_Y0, labelY1: BOT_LABEL_Y1,
     arenaY0: BOT_ARENA_Y0, arenaY1: BOT_ARENA_Y1,
     checkerY0: BOT_CHECKER_Y0, checkerY1: BOT_CHECKER_Y1,
-    drawFx: () => drawGravFx(botBall, fxBot.clock, botHitCount),
-    info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)) + '  |  GRAVITY: ' + gravMul(botHitCount).toFixed(2) + 'g',
+    drawFx: () => drawPhiFx(botBall, fxBot.clock, botHitCount),
+    info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)),
   });
 }
 
