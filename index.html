@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Speed Ball vs Double Ball</title>
+<title>Freeze Ball vs Speed Ball</title>
 <style>
   html, body {
     margin: 0;
@@ -96,10 +96,10 @@ const SPD_LIGHT  = [255, 190, 110];
 const SPD_DARK   = [150, 55, 0];
 const SPD_HOT    = [255, 244, 176];  // weissglühend
 const SPD_BOLT   = [70, 190, 255];   // elektrisches Blau
-const PHI_RGB    = [30, 100, 235];   // Double Ball - Blau
-const PHI_LIGHT  = [150, 195, 255];
-const PHI_DARK   = [8, 38, 140];
-const PHI_TEAL   = [70, 200, 255];   // Cyan-Akzent
+const PHI_RGB    = [40, 168, 245];   // Freeze Ball - Eisblau
+const PHI_LIGHT  = [200, 240, 255];
+const PHI_DARK   = [8, 62, 140];
+const PHI_TEAL   = [150, 228, 255];   // Eis-Akzent
 
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
@@ -114,7 +114,7 @@ const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
-const SPD_C = 98;        // Basisschaden
+const SPD_C = 56000;        // Basisschaden
 const SPD_P = 5;          // Exponent des Schadens
 const SPD_DT0 = 0.78;      // Starttempo
 const SPD_K = 0.035;       // Tempozuwachs pro Treffer (linear)
@@ -123,8 +123,11 @@ function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-function phiDamage(n) { return Math.pow(2, n - 1); } // Double: 1, 2, 4, 8 ...
-const DBL_DT = 0.71;      // Tempo des Double Balls (konstant)
+const GRAV_C = 392500000, GRAV_P = 3, FRZ_FRAMES = 36;   // Schaden GRAV_C * n^GRAV_P
+const GRAV_DT0 = 0.8, GRAV_K = 0.0;   // Starttempo, Schwerkraftzuwachs pro Treffer
+function gravMul(h) { return 1 + GRAV_K * h; }
+function phiDamage(n) { return Math.round(GRAV_C * Math.pow(n, GRAV_P)); }
+function phiDamageOld(n) { let a = 1, b = 1; for (let i = 2; i < n; i++) { const t = a + b; a = b; b = t; } return n <= 2 ? 1 : b; } // Fibonacci(n): 1, 1, 2, 3, 5, 8 ...
 
 function formatNum(v) { return Math.round(v).toLocaleString('de-DE'); }
 
@@ -222,21 +225,38 @@ function impactFx(side, ball, n) {
     }
     fx.shake = Math.max(fx.shake, Math.min(6, 1 + t * 0.9));
   } else {
-    // Golden Ratio: Goldener-Winkel-Burst + Ringe im Verhältnis phi
-    fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.0, life: 24, c: PHI_LIGHT, w: 3.5 });
-    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI, grow: 3.0 * PHI, life: 24, c: PHI_RGB, w: 3 });
-    fx.rings.push({ x: ball.x, y: fy, r: 5 * PHI * PHI, grow: 3.0 * PHI * PHI, life: 24, c: PHI_TEAL, w: 2.5 });
-    const cnt = 18 + Math.min(28, Math.floor(n / 3));
-    for (let i = 0; i < cnt; i++) {
-      const a = i * GOLDEN_ANGLE;
-      const v = 0.7 + 0.36 * Math.sqrt(i);
-      let vx = Math.cos(a) * v, vy = Math.sin(a) * v;
-      if (vy > 0) vy = -vy * 0.7;
-      const col = i % 3 === 0 ? PHI_LIGHT : (i % 3 === 1 ? PHI_TEAL : [255, 255, 255]);
-      pushPart(fx, { type: 'dot', x: ball.x, y: fy, vx, vy, g: 0.015, drag: 0.955, r: 1.8 + (i % 4) * 0.5, age: 0, life: 42 + (i % 5) * 6, c: col });
+    // Freeze: Frostring, Eiskristalle
+    fx.rings.push({ x: ball.x, y: fy, r: 5, grow: 3.2, life: 24, c: PHI_LIGHT, w: 3.5 });
+    fx.rings.push({ x: ball.x, y: fy, r: 3, grow: 6.5, life: 16, c: PHI_RGB, w: 3, flat: true });
+    iceShards(fx, ball.x, fy, 8 + Math.min(12, Math.floor(n / 4)), 5.5, 22);
+    for (let i = 0; i < 14; i++) {
+      const a = -Math.PI * Math.random(), v = 1 + Math.random() * 4;
+      pushPart(fx, { type: 'dot', x: ball.x, y: fy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 0.05, drag: 0.97, r: 1.4 + Math.random() * 1.4, age: 0, life: 30 + Math.random() * 20, c: i % 2 ? [255, 255, 255] : PHI_TEAL });
     }
-    fx.shake = Math.max(fx.shake, Math.min(3.5, 0.6 + n * 0.03));
+    fx.shake = Math.max(fx.shake, Math.min(3.5, 1.2 + n * 0.02));
   }
+}
+
+function iceShards(fx, x, y, n, v, life) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = v * (0.35 + Math.random());
+    pushPart(fx, { type: 'shard', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1, g: 0.18, drag: 0.985, r: 2.2 + Math.random() * 3.6, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5, age: 0, life: life + Math.random() * 14, c: i % 3 ? [200, 240, 255] : (i % 3 === 1 ? [90, 200, 255] : [255, 255, 255]) }, 420);
+  }
+}
+function freezeTop() {
+  const wasFrozen = topBall.frozen > 0;
+  topBall.frozen = FRZ_FRAMES; topBall.frozenMax = FRZ_FRAMES;
+  fxTop.rings.push({ x: topBall.x, y: topBall.y, r: 8, grow: 4.2, life: 18, c: [210, 245, 255], w: 5 });
+  fxTop.rings.push({ x: topBall.x, y: topBall.y, r: 4, grow: 8, life: 12, c: [90, 200, 255], w: 3, flat: true });
+  iceShards(fxTop, topBall.x, topBall.y, 20, 7.5, 24);
+  fxTop.shake = Math.max(fxTop.shake, 4);
+  if (!wasFrozen) addPopup('top', topBall.x, topBall.y - 30, 'FROZEN!', 'rgb(120,215,255)');
+  beep(1568, 0.07, 'triangle', 0.1); beep(2093, 0.12, 'sine', 0.07); beep(330, 0.18, 'sawtooth', 0.04);
+}
+function thawTop() {
+  iceShards(fxTop, topBall.x, topBall.y, 26, 6.5, 30);
+  fxTop.rings.push({ x: topBall.x, y: topBall.y, r: 6, grow: 3.4, life: 14, c: [255, 255, 255], w: 3 });
+  beep(1200, 0.05, 'square', 0.05); beep(1800, 0.06, 'triangle', 0.06);
 }
 
 function onBarBreak(side, idx) {
@@ -314,7 +334,7 @@ function init() {
   topBall = {
     x: W / 2, y: TOP_ARENA_Y0 + ARENA_H / 2,
     vx: Math.cos(tAngle) * BALL_SPEED, vy: Math.sin(tAngle) * BALL_SPEED,
-    r: 16, dt: SPD_DT0, squash: 0, trail: [],
+    r: 16, dt: SPD_DT0, squash: 0, trail: [], frozen: 0, frozenMax: 1,
   };
   const bAngle = Math.random() * Math.PI * 2;
   botBall = {
@@ -367,6 +387,13 @@ function update() {
     const floor = TOP_ARENA_Y1 + getActiveBarIndex(topBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = TOP_ARENA_Y0 + 10, y1 = floor - 10;
     const dt = speedDt(topHitCount);
+    if (topBall.frozen > 0) {
+      topBall.frozen--;
+      topBall.dt = 0.01;
+      fxTop.clock += 0.02;
+      if (Math.random() < 0.35) pushPart(fxTop, { type: 'dot', x: topBall.x + (Math.random() - 0.5) * 50, y: topBall.y + 10 + Math.random() * 20, vx: (Math.random() - 0.5) * 0.4, vy: -0.3 - Math.random() * 0.5, g: -0.01, drag: 0.98, r: 1 + Math.random() * 1.4, age: 0, life: 24 + Math.random() * 14, c: [220, 245, 255] });
+      if (topBall.frozen === 0) thawTop();
+    } else {
     topBall.dt = dt;
     topBall.vy += GRAVITY * dt;
     if (topBall.vy > MAX_FALL_SPEED) topBall.vy = MAX_FALL_SPEED;
@@ -414,15 +441,16 @@ function update() {
       speedHitSound(topHitCount);
       if (dealDamage('top', dmg)) finish('top');
     }
+    }
   }
 
   // ===== Unten: Golden Ratio Ball (phi^n) =====
   if (!isFullyDepleted(botBars)) {
     const floor = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H;
     const x0 = 12, x1 = W - 12, y0 = BOT_ARENA_Y0 + 10, y1 = floor - 10;
-    const dtB = DBL_DT;
+    const dtB = GRAV_DT0;
     botBall.dt = dtB;
-    botBall.vy += GRAVITY * dtB;
+    botBall.vy += GRAVITY * gravMul(botHitCount) * dtB;
     if (botBall.vy > MAX_FALL_SPEED) botBall.vy = MAX_FALL_SPEED;
     botBall.x += botBall.vx * dtB;
     botBall.y += botBall.vy * dtB;
@@ -431,14 +459,13 @@ function update() {
     if (botBall.y - botBall.r < y0) { botBall.y = y0 + botBall.r; botBall.vy *= -1; }
     fxBot.clock += 0.05 * dtB;
 
-    // Spiral-Schweif im Goldenen Winkel (Sonnenblumen-Muster)
-    const p = progressOf(totalBot);
-    if (Math.random() < 0.45 + 0.4 * p) {
-      const a = fxBot.spiral * GOLDEN_ANGLE;
+    // Schwerkraft-Sog: Partikel werden nach unten gezogen
+    const gm = gravMul(botHitCount);
+    if (Math.random() < 0.5) {
       fxBot.spiral++;
       pushPart(fxBot, {
-        type: 'dot', x: botBall.x, y: botBall.y, vx: Math.cos(a) * 0.9, vy: Math.sin(a) * 0.9, g: 0, drag: 0.968,
-        r: 1.3 + (fxBot.spiral % 3) * 0.5, age: 0, life: 36 + Math.random() * 14,
+        type: 'dot', x: botBall.x + (Math.random() - 0.5) * 22, y: botBall.y - 10 - Math.random() * 20, vx: 0, vy: 0.5, g: 0.06 * gm, drag: 0.98,
+        r: 1.3 + (fxBot.spiral % 3) * 0.5, age: 0, life: 26 + Math.random() * 12,
         c: fxBot.spiral % 3 === 0 ? PHI_LIGHT : (fxBot.spiral % 3 === 1 ? PHI_TEAL : [255, 255, 255]),
       });
     }
@@ -452,6 +479,7 @@ function update() {
       addPopup('bot', botBall.x, botBall.y - 8, '-' + formatNum(dmg), rgba(PHI_RGB, 1));
       impactFx('bot', botBall, botHitCount);
       phiHitSound(botHitCount);
+      if (!isFullyDepleted(topBars)) freezeTop();
       if (dealDamage('bot', dmg)) finish('bot');
     }
   }
@@ -556,6 +584,24 @@ function drawBallBody(ball, rgb, light, dark, symbol) {
     ctx.restore();
     return;
   }
+  if (symbol === 'SNOW') {
+    const k = ball.r / 16;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.1 * k; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const a = i * Math.PI / 3, c = Math.cos(a), sn = Math.sin(a);
+      ctx.beginPath(); ctx.moveTo(-c * 11 * k, -sn * 11 * k); ctx.lineTo(c * 11 * k, sn * 11 * k); ctx.stroke();
+      for (const sg of [-1, 1]) {
+        const bx = c * 6.5 * k * sg, by = sn * 6.5 * k * sg;
+        for (const da of [-0.7, 0.7]) {
+          ctx.beginPath(); ctx.moveTo(bx, by);
+          ctx.lineTo(bx + Math.cos(a + (sg < 0 ? Math.PI : 0) + da) * 4 * k, by + Math.sin(a + (sg < 0 ? Math.PI : 0) + da) * 4 * k); ctx.stroke();
+        }
+      }
+    }
+    ctx.lineCap = 'butt';
+    ctx.restore();
+    return;
+  }
   // Symbol
   ctx.font = '900 ' + Math.round(ball.r * (symbol.length > 1 ? 0.88 : 1.05)) + 'px Arial';
   ctx.textAlign = 'center';
@@ -641,7 +687,83 @@ function drawSpeedFx(ball, clock) {
   }
 }
 
-// Golden Ratio: rotierende goldene Spirale + Satelliten im Goldenen Winkel
+function drawFrostFx(ball, clock, hits) {
+  const g = ctx.createRadialGradient(ball.x, ball.y, ball.r * 0.6, ball.x, ball.y, ball.r * 2.8);
+  g.addColorStop(0, 'rgba(150,228,255,0.45)'); g.addColorStop(1, 'rgba(150,228,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 6; i++) {
+    const a = clock * 0.9 + i * Math.PI / 3, r0 = ball.r + 4, r1 = ball.r + 13 + 3 * Math.sin(clock * 3 + i);
+    ctx.strokeStyle = 'rgba(235,250,255,0.9)'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(ball.x + Math.cos(a) * r0, ball.y + Math.sin(a) * r0); ctx.lineTo(ball.x + Math.cos(a) * r1, ball.y + Math.sin(a) * r1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ball.x + Math.cos(a) * (r1 - 4) + Math.cos(a + 1.6) * 3, ball.y + Math.sin(a) * (r1 - 4) + Math.sin(a + 1.6) * 3); ctx.lineTo(ball.x + Math.cos(a) * r1, ball.y + Math.sin(a) * r1); ctx.lineTo(ball.x + Math.cos(a) * (r1 - 4) + Math.cos(a - 1.6) * 3, ball.y + Math.sin(a) * (r1 - 4) + Math.sin(a - 1.6) * 3); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+// Eisblock um den eingefrorenen Speed Ball
+function drawIce(ball) {
+  if (!(ball.frozen > 0)) return;
+  const f = ball.frozen, fm = ball.frozenMax;
+  const born = Math.min(1, (fm - f) / 6);          // Eis wächst in 6 Frames
+  const shaky = f < 9 ? (Math.random() - 0.5) * 2.2 : 0;  // kurz vorm Auftauen zittert es
+  const R = ball.r * 2.1 * (0.55 + 0.45 * born);
+  ctx.save();
+  ctx.translate(ball.x + shaky, ball.y);
+  // Frostglühen
+  const g = ctx.createRadialGradient(0, 0, ball.r * 0.5, 0, 0, ball.r * 3);
+  g.addColorStop(0, 'rgba(150,228,255,0.55)'); g.addColorStop(1, 'rgba(150,228,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, ball.r * 3, 0, Math.PI * 2); ctx.fill();
+  // Kristallblock (Achteck, leicht unregelmäßig)
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4 + 0.2, rr = R * (i % 2 ? 1.28 : 1.12);
+    pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  }
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < 8; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath();
+  const ig = ctx.createLinearGradient(-R, -R, R, R);
+  ig.addColorStop(0, 'rgba(235,252,255,0.78)'); ig.addColorStop(0.5, 'rgba(120,205,255,0.55)'); ig.addColorStop(1, 'rgba(60,150,230,0.7)');
+  ctx.fillStyle = ig; ctx.fill();
+  ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineJoin = 'round'; ctx.stroke();
+  // Facetten
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+  ctx.beginPath();
+  for (let i = 0; i < 8; i += 2) { ctx.moveTo(0, 0); ctx.lineTo(pts[i][0], pts[i][1]); }
+  ctx.stroke();
+  // Glanz
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.moveTo(-R * 0.75, -R * 0.2); ctx.lineTo(-R * 0.35, -R * 0.85); ctx.lineTo(-R * 0.15, -R * 0.7); ctx.lineTo(-R * 0.55, -R * 0.1); ctx.closePath(); ctx.fill();
+  // Risse kurz vorm Auftauen
+  if (f < 14) {
+    ctx.strokeStyle = 'rgba(20,70,130,0.9)'; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-R * 0.9, -R * 0.3); ctx.lineTo(-R * 0.3, 0); ctx.lineTo(-R * 0.1, R * 0.5); ctx.lineTo(R * 0.3, R * 0.2); ctx.lineTo(R * 0.9, R * 0.7);
+    ctx.moveTo(R * 0.2, -R * 0.9); ctx.lineTo(0, -R * 0.2); ctx.lineTo(R * 0.4, 0.1 * R);
+    ctx.stroke();
+  }
+  // Eiszapfen unten
+  ctx.fillStyle = 'rgba(210,245,255,0.9)';
+  for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * R * 0.5 - 4, R * 0.95); ctx.lineTo(i * R * 0.5 + 4, R * 0.95); ctx.lineTo(i * R * 0.5, R * (1.35 + 0.15 * (i === 0))); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+
+// Gravity: nach innen gezogene Ringe + dunkler Hof
+function drawGravFx(ball, clock, hits) {
+  const gm = gravMul(hits);
+  const g = ctx.createRadialGradient(ball.x, ball.y, ball.r * 0.5, ball.x, ball.y, ball.r * 3.2);
+  g.addColorStop(0, rgba(PHI_DARK, 0.45));
+  g.addColorStop(1, rgba(PHI_DARK, 0));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * 3.2, 0, Math.PI * 2); ctx.fill();
+  const spd = 0.6 + 0.25 * gm;
+  for (let i = 0; i < 3; i++) {
+    const u = (clock * spd + i / 3) % 1;
+    const rad = ball.r * (3.2 - 2.1 * u);
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, rad, 0, Math.PI * 2);
+    ctx.strokeStyle = rgba(i % 2 ? PHI_TEAL : PHI_LIGHT, 0.15 + 0.6 * u);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+}
 function drawPhiFx(ball, clock, hits) {
   ctx.save();
   ctx.translate(ball.x, ball.y);
@@ -694,6 +816,15 @@ function drawParticles(fx, confettiPass) {
       ctx.moveTo(p.pts[0][0], p.pts[0][1]);
       for (let k = 1; k < p.pts.length; k++) ctx.lineTo(p.pts[k][0], p.pts[k][1]);
       ctx.stroke();
+    } else if (p.type === 'shard') {
+      ctx.save();
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = rgba(p.c, Math.min(1, a * 1.5));
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.8 * a) + ')';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(0, -p.r * 1.5); ctx.lineTo(p.r * 0.8, 0); ctx.lineTo(0, p.r * 1.5); ctx.lineTo(-p.r * 0.8, 0); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
     } else if (p.type === 'dot') {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
@@ -747,10 +878,11 @@ function drawSide(o) {
   drawRings(fx);
   drawParticles(fx, false);
   if (!isFullyDepleted(o.bars) || (gameOver && winner === o.side)) {
-    drawTrail(o.ball, o.trailNear, o.trailFar);
+    if (!(o.ball.frozen > 0)) drawTrail(o.ball, o.trailNear, o.trailFar);
     drawAura(o.ball, o.rgb, progressOf(o.total));
     o.drawFx();
     drawBallBody(o.ball, o.rgb, o.light, o.dark, o.symbol);
+    if (o.overlay) o.overlay();
   }
   for (const p of popups) {
     if (p.side !== o.side) continue;
@@ -827,8 +959,9 @@ function draw() {
     labelY0: TOP_LABEL_Y0, labelY1: TOP_LABEL_Y1,
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
-    drawFx: () => drawSpeedFx(topBall, fxTop.clock),
-    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  SPEED: ' + speedDt(topHitCount).toFixed(2) + 'x',
+    drawFx: () => { if (!(topBall.frozen > 0)) drawSpeedFx(topBall, fxTop.clock); },
+    overlay: () => drawIce(topBall),
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  ' + (topBall.frozen > 0 ? 'FROZEN' : 'SPEED: ' + speedDt(topHitCount).toFixed(2) + 'x'),
   });
 
   // VS
@@ -839,15 +972,15 @@ function draw() {
   ctx.fillText('VS', W / 2, (VS_Y0 + VS_Y1) / 2);
 
   drawSide({
-    side: 'bot', title: 'DOUBLE BALL', symbol: 'x2',
+    side: 'bot', title: 'FREEZE BALL', symbol: 'SNOW',
     rgb: PHI_RGB, light: PHI_LIGHT, dark: PHI_DARK, gold: PHI_TEAL,
     trailNear: PHI_LIGHT, trailFar: PHI_TEAL,
     ball: botBall, bars: botBars, fx: fxBot, total: totalBot,
     labelY0: BOT_LABEL_Y0, labelY1: BOT_LABEL_Y1,
     arenaY0: BOT_ARENA_Y0, arenaY1: BOT_ARENA_Y1,
     checkerY0: BOT_CHECKER_Y0, checkerY1: BOT_CHECKER_Y1,
-    drawFx: () => drawPhiFx(botBall, fxBot.clock, botHitCount),
-    info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)),
+    drawFx: () => drawFrostFx(botBall, fxBot.clock, botHitCount),
+    info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)) + '  |  FREEZE: ' + (FRZ_FRAMES / 60).toFixed(1) + 's',
   });
 }
 
