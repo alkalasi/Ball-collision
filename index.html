@@ -628,7 +628,49 @@ function drawAura(ball, rgb, p) {
   ctx.fill();
 }
 
+function beamA() { return botHitCount > 0 ? Math.max(0.5, Math.min(1, Math.sqrt(burnPool / (phiDamage(botHitCount) * 0.35 + 1)))) : 0; }
+// Feuerstrahl vom Ball runter auf den Balken, der gerade Schaden nimmt
+function drawBeam(ball, clock) {
+  const a = beamA();
+  if (a < 0.03 || isFullyDepleted(botBars)) return;
+  const floorY = BOT_ARENA_Y1 + getActiveBarIndex(botBars) * BAR_H - 0;
+  const y0 = ball.y + ball.r * 0.6;
+  if (floorY <= y0) return;
+  const w = (12 + 14 * a) * (0.85 + 0.15 * Math.sin(clock * 40));
+  ctx.save();
+  ctx.lineCap = 'round';
+  const layers = [[w * 2.4, 'rgba(240,60,10,' + (0.18 * a) + ')'], [w * 1.5, 'rgba(255,130,25,' + (0.45 * a) + ')'], [w, 'rgba(255,210,70,' + (0.8 * a) + ')'], [w * 0.45, 'rgba(255,255,235,' + a + ')']];
+  for (const [lw, col] of layers) {
+    ctx.strokeStyle = col; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(ball.x, y0);
+    const n = 8;
+    for (let i = 1; i <= n; i++) { const y = y0 + (floorY - y0) * i / n; ctx.lineTo(ball.x + Math.sin(clock * 26 + i * 1.9) * 2.2 * (i / n), y); }
+    ctx.stroke();
+  }
+  // Aufprallglut am Boden
+  const gr = ctx.createRadialGradient(ball.x, floorY, 1, ball.x, floorY, 30 + 20 * a);
+  gr.addColorStop(0, 'rgba(255,240,170,' + (0.9 * a) + ')'); gr.addColorStop(0.4, 'rgba(255,120,25,' + (0.5 * a) + ')'); gr.addColorStop(1, 'rgba(240,60,10,0)');
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(ball.x, floorY, 50 + 20 * a, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (Math.random() < 0.8 * a) pushPart(fxBot, { type: 'spark', x: ball.x + (Math.random() - 0.5) * 10, y: floorY - 2, vx: (Math.random() - 0.5) * 6, vy: -2 - Math.random() * 5, g: 0.2, drag: 0.98, r: 1.2 + Math.random() * 1.4, age: 0, life: 14 + Math.random() * 14, c: Math.random() < 0.5 ? PHI_TEAL : [255, 255, 220] });
+}
+// Strahl trifft den Lebensbalken: heller Fleck + Hitzeflimmern auf dem Balken
+function drawBeamOnBar(floorY) {
+  const a = beamA();
+  if (a < 0.03 || isFullyDepleted(botBars)) return;
+  const x = botBall.x;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, floorY, W, BAR_H); ctx.clip();
+  const gr = ctx.createRadialGradient(x, floorY + 6, 1, x, floorY + 6, 46 + 30 * a);
+  gr.addColorStop(0, 'rgba(255,250,215,' + (0.95 * a) + ')'); gr.addColorStop(0.35, 'rgba(255,170,40,' + (0.7 * a) + ')'); gr.addColorStop(1, 'rgba(240,60,10,0)');
+  ctx.fillStyle = gr; ctx.fillRect(0, floorY, W, BAR_H);
+  ctx.strokeStyle = 'rgba(255,245,200,' + (0.9 * a) + ')'; ctx.lineWidth = 3 + 4 * a; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, floorY); ctx.lineTo(x, floorY + BAR_H * 0.55); ctx.stroke();
+  ctx.restore();
+}
+
 function drawInfernoFx(ball, clock, hits) {
+  drawBeam(ball, clock);
   const heat = Math.min(1, hits / 60);
   const gr = ball.r * (2.4 + 1.6 * heat);
   const g = ctx.createRadialGradient(ball.x, ball.y, 2, ball.x, ball.y, gr);
@@ -841,6 +883,7 @@ function drawSide(o) {
     const y0 = floorY + (i - active) * BAR_H;
     drawHealthBar(y0, y0 + BAR_H, o.light, o.dark, o.gold, o.bars[i], i === active);
   }
+  if (o.afterBars) o.afterBars(floorY);
   drawChecker(o.checkerY0, o.checkerY1);
 
   if (gameOver && winner === o.side) {
@@ -906,6 +949,7 @@ function draw() {
     arenaY0: BOT_ARENA_Y0, arenaY1: BOT_ARENA_Y1,
     checkerY0: BOT_CHECKER_Y0, checkerY1: BOT_CHECKER_Y1,
     drawFx: () => drawInfernoFx(botBall, fxBot.clock, botHitCount),
+    afterBars: (fy) => drawBeamOnBar(fy),
     info: () => 'DAMAGE: ' + formatNum(phiDamage(botHitCount + 1)) + '  |  HEAT: ' + (600 + botHitCount * 25) + '°C',
   });
 }
