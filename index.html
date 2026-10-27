@@ -104,7 +104,7 @@ const PHI_TEAL   = [190, 200, 215];   // Stahlgrau
 function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 
 // 3 Balken (HP) pro Ball, der Boden ist immer der aktive Balken
-const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
+const BAR_HEALTHS = [300000000000000, 330000000000000, 370000000000000];
 
 // Physik (identische Sprungbahn: ~1 s pro Bodenkontakt)
 const GRAVITY = 0.30;
@@ -114,16 +114,16 @@ const BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653; // Goldener Winkel (Phyllotaxis)
 
 // Speed Ball: Schaden SPD_C * n^SPD_P, Zeitfaktor (Tempo) wächst mit jedem Treffer
-const SPD_C = 487550000;        // Basisschaden
+const SPD_C = 200000000;        // Basisschaden
 const SPD_P = 3;          // Exponent des Schadens
-const SPD_DT0 = 0.8; const ORB_N = 5, ORB_R = 42, ORB_SR = 7, ORB_W = 0.075, ORB_F = 0.5, ORB_JUMP = 0.8; const DRL_F = 0.4, DRL_SPD = 6.5;      // Starttempo
+const SPD_DT0 = 0.8; const ORB_MAX = 20, ORB_R = 40, ORB_SR = 6, ORB_W = 0.075, ORB_F = 0.25, ORB_JUMP = 0.8; const DRL_F = 0.4, DRL_SPD = 6.5;      // Starttempo
 const SPD_K = 0.0;       // Tempozuwachs pro Treffer (linear)
 function speedDt(hits) { return SPD_DT0 * (1 + SPD_K * hits); }
 function speedDamage(n) { return Math.round(SPD_C * Math.pow(n, SPD_P)); }
 
 // Golden Ratio Ball: Schaden = phi^n
 const PHI = (1 + Math.sqrt(5)) / 2;
-const GRAV_C = 280400000, GRAV_P = 3;   // Schaden GRAV_C * n^GRAV_P
+const GRAV_C = 221930000, GRAV_P = 3;   // Schaden GRAV_C * n^GRAV_P
 const GRAV_DT0 = 0.8, GRAV_K = 0.0;   // Starttempo, Schwerkraftzuwachs pro Treffer
 function gravMul(h) { return 1 + GRAV_K * h; }
 function phiDamage(n) { return Math.round(GRAV_C * Math.pow(n, GRAV_P)); }
@@ -311,7 +311,7 @@ function init() {
   topBars = BAR_HEALTHS.slice();
   botBars = BAR_HEALTHS.slice();
   topHitCount = 0; drills = []; dSparks = [];
-  topBall.sat = []; for (let i = 0; i < ORB_N; i++) topBall.sat.push({ a: i * Math.PI * 2 / ORB_N, armed: true, x: 0, y: 0 });
+  topBall.sat = []; addSat();
   botHitCount = 0;
   totalTop = 0;
   totalBot = 0;
@@ -344,6 +344,18 @@ function dealDamage(side, dmg) {
   return after >= bars.length;
 }
 
+function satRadius(i) { return ORB_R + 13 * Math.floor(i / 7); }
+function addSat() {
+  if (topBall.sat.length >= ORB_MAX) return;
+  const i = topBall.sat.length;
+  const a0 = topBall.sat.length ? topBall.sat[0].a : Math.random() * 6.28;
+  topBall.sat.push({ a: a0 + i * 2.399963, armed: true, x: topBall.x, y: topBall.y, R: satRadius(i), born: 0 });
+  if (i > 0) {
+    fxTop.rings.push({ x: topBall.x, y: topBall.y, r: 6, grow: 3.2, life: 18, c: SPD_BOLT, w: 3, round: true });
+    addPopup('top', topBall.x, topBall.y - 26, '+1 ORBIT', 'rgb(255,214,90)');
+    beep(1046 + i * 30, 0.08, 'triangle', 0.07);
+  }
+}
 function updateDrills() {
   for (let i = drills.length - 1; i >= 0; i--) {
     const d = drills[i];
@@ -410,14 +422,16 @@ function update() {
     fxTop.clock += 0.2 * dt;
     for (const sa of topBall.sat) {
       sa.a += ORB_W * dt;
-      sa.x = topBall.x + Math.cos(sa.a) * ORB_R;
-      sa.y = topBall.y + Math.sin(sa.a) * ORB_R;
+      sa.born++;
+      const rr = sa.R * Math.min(1, sa.born / 14);
+      sa.x = topBall.x + Math.cos(sa.a) * rr;
+      sa.y = topBall.y + Math.sin(sa.a) * rr;
       if (sa.y + ORB_SR > y1) {
         if (sa.armed) {
           sa.armed = false;
           const sd = Math.round(SPD_C * ORB_F * Math.pow(topHitCount + 1, SPD_P));
           totalTop += sd;
-          addPopup('top', sa.x, y1 - 14, '-' + formatNum(sd), rgba(SPD_RGB, 1));
+          if (topBall.sat.length <= 6 || Math.random() < 0.3) addPopup('top', sa.x, y1 - 14, '-' + formatNum(sd), rgba(SPD_RGB, 1));
           fxTop.rings.push({ x: sa.x, y: y1, r: 3, grow: 2.6, life: 14, c: SPD_HOT, w: 3 });
           for (let i = 0; i < 8; i++) { const a = -Math.PI * Math.random(), v = 1.5 + Math.random() * 4; pushPart(fxTop, { type: 'spark', x: sa.x, y: y1, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 0.2, drag: 0.98, r: 1.2 + Math.random(), age: 0, life: 14 + Math.random() * 12, c: i % 2 ? SPD_BOLT : SPD_HOT }); }
           beep(880 + Math.random() * 300, 0.05, 'triangle', 0.07);
@@ -444,6 +458,7 @@ function update() {
       topBall.vy = -Math.sqrt(2 * GRAVITY * hMax);
       topHitCount++;
       const dmg = speedDamage(topHitCount);
+      addSat();
       totalTop += dmg;
       addPopup('top', topBall.x, topBall.y - 8, '-' + formatNum(dmg), rgba(SPD_RGB, 1));
       impactFx('top', topBall, topHitCount);
@@ -653,11 +668,14 @@ function drawOrbitFx(ball, clock) {
   g.addColorStop(0, 'rgba(150,245,235,0.4)'); g.addColorStop(1, 'rgba(20,190,185,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ball.x, ball.y, ORB_R + 22, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(20,190,185,0.4)'; ctx.lineWidth = 1.4; ctx.setLineDash([4, 5]);
-  ctx.beginPath(); ctx.arc(ball.x, ball.y, ORB_R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  const radii = {}; for (const sa of ball.sat) radii[sa.R] = 1;
+  for (const R of Object.keys(radii)) { ctx.beginPath(); ctx.arc(ball.x, ball.y, +R, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.setLineDash([]);
   for (const sa of ball.sat) {
     for (let k = 1; k <= 7; k++) {
       const a = sa.a - k * 0.11;
-      const tx = ball.x + Math.cos(a) * ORB_R, ty = ball.y + Math.sin(a) * ORB_R;
+      const rr2 = sa.R * Math.min(1, sa.born / 14);
+      const tx = ball.x + Math.cos(a) * rr2, ty = ball.y + Math.sin(a) * rr2;
       ctx.beginPath(); ctx.arc(tx, ty, ORB_SR * (1 - k / 9), 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(20,190,185,' + (0.45 * (1 - k / 8)) + ')'; ctx.fill();
     }
@@ -966,7 +984,7 @@ function draw() {
     arenaY0: TOP_ARENA_Y0, arenaY1: TOP_ARENA_Y1,
     checkerY0: TOP_CHECKER_Y0, checkerY1: TOP_CHECKER_Y1,
     drawFx: () => drawOrbitFx(topBall, fxTop.clock),
-    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  ORBITS: ' + ORB_N,
+    info: () => 'DAMAGE: ' + formatNum(speedDamage(topHitCount + 1)) + '  |  ORBITS: ' + topBall.sat.length,
   });
 
   // VS
