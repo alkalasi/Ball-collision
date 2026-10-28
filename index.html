@@ -50,7 +50,7 @@ const ease = (t) => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);
 const GRAVITY = 0.30, MAX_FALL_SPEED = 30, BOUNCE_VY = 9.487, BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653, PHI = (1 + Math.sqrt(5)) / 2;
 const BAR_HEALTHS = [300000000000000, 330000000000000, 370000000000000];
-const TS = 2;   // Spielschritte pro Videoframe (Duelle laufen doppelt so schnell)
+const TS = 1, TF = 0.78;   // Spielschritte pro Videoframe
 
 // ===== Sound =====
 let audioCtx = null;
@@ -254,7 +254,7 @@ function stepSide(sd) {
   const balls = [sd.ball, ...sd.clones];
   for (let bi = 0; bi < balls.length; bi++) {
     const b = balls[bi];
-    const dt = sp.dt(sd), gm = sp.gm ? sp.gm(sd) : 1;
+    const dt = sp.dt(sd) * TF, gm = sp.gm ? sp.gm(sd) : 1;
     b.dt = dt;
     b.vy += GRAVITY * gm * dt;
     if (b.vy > MAX_FALL_SPEED) b.vy = MAX_FALL_SPEED;
@@ -529,7 +529,9 @@ const MATCHES = [
   { l: 2, a: 0, b: 1, o: 0, name: 'FINAL' },
 ];
 const OUT_LVL = [1, 1, 1, 1, 2, 2, 3];
-const CAL = [[11695000000000,5011870000000,11,101],[178649000000,963829000000,12,102],[12473800000,199526000000,13,103],[17378000000000,3664380000000,14,104],[2147830000000,267917000000,15,105],[4285490000,4246200000000,16,106],[666807000000,18197000000,17,107]];
+const CAL = [[25585900,242103,11,101]];
+const M0 = 0, SINGLE = true;
+const PRE = [];   // Sieger bereits gespielter Duelle
 function slotPos(l, i) {
   if (l === 3) return { x: W / 2, y: LVL_Y[3] };
   const n = 8 >> l, step = W / n;
@@ -638,11 +640,12 @@ function drawChampion() {
 }
 
 // ===== Phasen =====
-const DUR = { intro: 150, pre: 18, zin: 42, hold: 55, zout: 42, adv: 34 };
+const DUR = { intro: 75, pre: 18, zin: 42, hold: 55, zout: 42, adv: 34 };
 function setPhase(p) { T.phase = p; T.t = 0; }
 function startGame() {
   if (started) return;
   ensureAudio(); started = true; gameOver = false; slotsInit(); T.conf = [];
+  for (let m = 0; m < M0; m++) T.slots[OUT_LVL[m]][MATCHES[m].o] = PRE[m];
   setPhase('intro');
   document.getElementById('start-overlay').style.display = 'none';
 }
@@ -655,7 +658,7 @@ function update() {
   popups.forEach(p => p.age++); popups = popups.filter(p => p.age <= 44);
   T.t++;
   switch (T.phase) {
-    case 'intro': if (T.t >= DUR.intro) { beginMatch(0); setPhase('pre'); } break;
+    case 'intro': if (T.t >= DUR.intro) { beginMatch(M0); setPhase('pre'); } break;
     case 'pre': if (T.t >= DUR.pre) { setPhase('zin'); beep(300, 0.4, 'sine', 0.12); } break;
     case 'zin': if (T.t >= DUR.zin) setPhase('fight'); break;
     case 'fight':
@@ -676,7 +679,8 @@ function update() {
     case 'adv':
       if (T.t >= DUR.adv) {
         T.pop = null;
-        if (T.m + 1 < MATCHES.length) { beginMatch(T.m + 1); setPhase('pre'); }
+        if (SINGLE) { if (T.m === MATCHES.length - 1) setPhase('champ'); else setPhase('end'); gameOver = true; }
+        else if (T.m + 1 < MATCHES.length) { beginMatch(T.m + 1); setPhase('pre'); }
         else { setPhase('champ'); gameOver = true; }
       }
       break;
@@ -714,12 +718,13 @@ function draw() {
     case 'zin': compose(T.t / DUR.zin, matchCenter(T.m)); break;
     case 'fight': drawDuel(stageOf()); break;
     case 'zout': compose(1 - T.t / DUR.zout, matchCenter(T.m)); break;
+    case 'end': drawBracket(-1, null); break;
     case 'adv': { const pi = T.pop ? { l: T.pop.l, i: T.pop.i, u: Math.min(1, T.t / 24) } : null; drawBracket(-1, pi); break; }
     case 'champ': drawChampion(); break;
   }
   if (T.phase === 'intro') {
-    const a = ease(T.t / 20) * (1 - ease((T.t - 120) / 30));
-    ctx.globalAlpha = a; ctx.fillStyle = '#1b1608'; ctx.font = '900 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('WHO WILL WIN?', W / 2, 880); ctx.globalAlpha = 1;
+    const a = ease(T.t / 15) * (1 - ease((T.t - 55) / 20));
+    ctx.globalAlpha = a; ctx.fillStyle = '#1b1608'; ctx.font = '900 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(MATCHES[M0].name, W / 2, 880); ctx.globalAlpha = 1;
   }
 }
 window.__api = { soloTime, SPECS };
