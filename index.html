@@ -711,7 +711,7 @@ function compose(p, c) {   // p: 0 = Turnierbaum, 1 = Duell
   }
 }
 function draw() {
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#e9ddc4'; ctx.fillRect(0, 0, W, H);
   switch (T.phase) {
     case 'idle': case 'intro': drawBracket(-1, null); break;
     case 'pre': drawBracket(T.m, null); break;
