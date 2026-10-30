@@ -50,7 +50,7 @@ const ease = (t) => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);
 const GRAVITY = 0.30, MAX_FALL_SPEED = 30, BOUNCE_VY = 9.487, BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653, PHI = (1 + Math.sqrt(5)) / 2;
 const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
-const TS = 1, TF = 1.45, TM = {};
+const TS = 1, TF = 1.45, TM = {"fact":0.4};
 
 // ===== Sound =====
 let audioCtx = null;
@@ -529,9 +529,9 @@ const MATCHES = [
   { l: 2, a: 0, b: 1, o: 0, name: 'FINAL' },
 ];
 const OUT_LVL = [1, 1, 1, 1, 2, 2, 3];
-const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[10,14859400,15,105],[1,1,1,2],[1,1,1,2]];
-const M0 = 4, SINGLE = true;
-const PRE = ["fib","split","speed","fact"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[4634.47,0.625173,16,106],[1,1,1,2]];
+const M0 = 5, SINGLE = true;
+const PRE = ["fib","split","speed","fact","fib"];   // Sieger bereits gespielter Duelle
 function slotPos(l, i) {
   if (l === 3) return { x: W / 2, y: LVL_Y[3] };
   const n = 8 >> l, step = W / n;
