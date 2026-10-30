@@ -50,7 +50,7 @@ const ease = (t) => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);
 const GRAVITY = 0.30, MAX_FALL_SPEED = 30, BOUNCE_VY = 9.487, BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653, PHI = (1 + Math.sqrt(5)) / 2;
 const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
-const TS = 1, TF = 1.45;   // Spielschritte pro Videoframe
+const TS = 1, TF = 1.45, TM = {"fact":0.4,"double":0.8};
 
 // ===== Sound =====
 let audioCtx = null;
@@ -254,7 +254,7 @@ function stepSide(sd) {
   const balls = [sd.ball, ...sd.clones];
   for (let bi = 0; bi < balls.length; bi++) {
     const b = balls[bi];
-    const dt = sp.dt(sd) * TF, gm = sp.gm ? sp.gm(sd) : 1;
+    const dt = sp.dt(sd) * TF * (TM[sp.key] || 1), gm = sp.gm ? sp.gm(sd) : 1;
     b.dt = dt;
     b.vy += GRAVITY * gm * dt;
     if (b.vy > MAX_FALL_SPEED) b.vy = MAX_FALL_SPEED;
@@ -529,9 +529,9 @@ const MATCHES = [
   { l: 2, a: 0, b: 1, o: 0, name: 'FINAL' },
 ];
 const OUT_LVL = [1, 1, 1, 1, 2, 2, 3];
-const CAL = [[1,1,1,2],[1,1,1,2],[5152.29,143219000,13,103]];
-const M0 = 2, SINGLE = true;
-const PRE = ["fib","split"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[0.625173,0.314775,14,104]];
+const M0 = 3, SINGLE = true;
+const PRE = ["fib","split","speed"];   // Sieger bereits gespielter Duelle
 function slotPos(l, i) {
   if (l === 3) return { x: W / 2, y: LVL_Y[3] };
   const n = 8 >> l, step = W / n;
