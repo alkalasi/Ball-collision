@@ -50,7 +50,7 @@ const ease = (t) => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);
 const GRAVITY = 0.30, MAX_FALL_SPEED = 30, BOUNCE_VY = 9.487, BALL_SPEED = 3.2;
 const GOLDEN_ANGLE = 2.399963229728653, PHI = (1 + Math.sqrt(5)) / 2;
 const BAR_HEALTHS = [1000, 10000000000, 1000000000000000];
-const TS = 1, TF = 1.45, TM = {"golden":0.85};
+const TS = 1, TF = 1.45, TM = {"golden":0.85,"double":1.0};
 
 // ===== Sound =====
 let audioCtx = null;
@@ -80,7 +80,7 @@ const GROW_R0 = 14, GROW_RK = 3.0, GROW_RMAX = 170, GROW_CEIL_R = 48;
 const ORB_R = 40, ORB_SR = 6, ORB_W = 0.075, ORB_F = 0.25, ORB_MAX = 14;
 const SPLIT_GAP = 150, SPLIT_MAX = 16;
 const RK_GAP = 80, RK_FLIGHT = 30, RK_F = 40;
-const LZ_F = 2;
+const LZ_F = 2, FRZ_FRAMES = 36;
 function lzSec(sd) { return sd.lzT / 60; }
 function lzLen(sd) { return Math.min(430, 90 + 5 * lzSec(sd)); }
 function lzW(sd) { return Math.min(0.28, 0.06 + 0.002 * lzSec(sd)); }
@@ -114,7 +114,8 @@ function mkSpec(key, title, symbol, rgb, light, dark, hot, acc) {
 }
 SPECS.rocket = { key: 'rocket', title: 'ROCKET BALL', symbol: 'ROCKET', rgb: [238, 58, 58], light: [255, 170, 160], dark: [120, 10, 20], hot: [255, 225, 190], acc: [255, 190, 50], r0: 16,
   dmg: n => n * n, dt: sd => 0.7, info: sd => 'ROCKETS: ' + sd.rk };
-SPECS.freeze = mkSpec('freeze', 'FREEZE BALL', 'SNOW', [110, 185, 245], [205, 238, 255], [30, 80, 150], [235, 250, 255], [255, 255, 255]);
+SPECS.freeze = mkSpec('freeze', 'FREEZE BALL', 'SNOW', [70, 170, 245], [205, 238, 255], [20, 70, 150], [235, 250, 255], [255, 255, 255]);
+SPECS.freeze.dmg = n => n * n * n; SPECS.freeze.dt = sd => 0.7; SPECS.freeze.info = sd => 'FREEZE: ' + (FRZ_FRAMES / 60).toFixed(1) + 's';
 SPECS.inferno = mkSpec('inferno', 'INFERNO BALL', 'FLAME', [190, 28, 18], [255, 140, 70], [70, 0, 0], [255, 210, 120], [255, 150, 30]);
 SPECS.laser = mkSpec('laser', 'LASER BALL', 'LASER', [24, 205, 90], [150, 255, 190], [0, 92, 40], [220, 255, 235], [255, 60, 60]);
 SPECS.laser.info = sd => 'BEAM: ' + lzLen(sd).toFixed(0) + ' px';
@@ -144,7 +145,7 @@ function newSide(i, key, C, seed) {
   const rn = () => { rs2 = (Math.imul(rs2, 1664525) + 1013904223) >>> 0; return rs2 / 4294967296; };
   const a = rn() * Math.PI * 2;
   const sd = {
-    rnd: rn, i, key, spec, C, hits: 0, total: 0, fx: makeFx(), bars: BAR_HEALTHS.slice(), clones: [], sats: [], splitTimer: 0, fin: -1, rkT: 0, rk: 0, rockets: [], lzT: 0, lzA: -1.2, lzHit: null, lzAcc: 0, lzN: 0,
+    rnd: rn, i, key, spec, C, hits: 0, total: 0, fx: makeFx(), bars: BAR_HEALTHS.slice(), clones: [], sats: [], splitTimer: 0, fin: -1, rkT: 0, rk: 0, rockets: [], frozen: 0, frozenMax: 1, lzT: 0, lzA: -1.2, lzHit: null, lzAcc: 0, lzN: 0,
     ball: { x: W / 2, y: G[i].arenaY0 + ARENA_H / 2, vx: Math.cos(a) * BALL_SPEED, vy: Math.sin(a) * BALL_SPEED, r: spec.r0, dt: 1, squash: 0, trail: [] },
   };
   if (key === 'orbital') addSat(sd, true);
@@ -231,6 +232,8 @@ function impactFx(sd, b, n) {
       sparks(fx, b.x, fy, 26, 3, 10, [sp.acc, sp.rgb, sp.hot]); fx.shake = Math.max(fx.shake, 6); break;
     case 'orbital':
       sparks(fx, b.x, fy, 14, 2, 7, [sp.hot, sp.rgb]); fx.shake = Math.max(fx.shake, 2.4); break;
+    case 'freeze':
+      sparks(fx, b.x, fy, 12, 2, 6, [sp.hot, sp.rgb, [255, 255, 255]]); iceShards(fx, b.x, fy, 6, 4, 20); fx.shake = Math.max(fx.shake, 2.4); break;
     case 'laser':
       sparks(fx, b.x, fy, 10, 2, 6, [sp.hot, sp.rgb]); fx.shake = Math.max(fx.shake, 2); break;
     case 'rocket':
@@ -248,6 +251,22 @@ function hitSound(sd, n) {
   else { const f = NOTES[n % NOTES.length] * (i ? 1 : 0.75); beep(f, 0.16, 'triangle', 0.1); beep(f * PHI / 2, 0.1, 'sine', 0.04); }
 }
 
+function iceShards(fx, x, y, n, v, life) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = v * (0.35 + Math.random());
+    pushPart(fx, { type: 'shard', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1, g: 0.18, drag: 0.985, r: 2.2 + Math.random() * 3.6, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5, age: 0, life: life + Math.random() * 14, c: i % 3 ? [200, 240, 255] : [255, 255, 255] }, 420);
+  }
+}
+function freezeSide(o) {
+  const was = o.frozen > 0, b = o.ball;
+  o.frozen = FRZ_FRAMES; o.frozenMax = FRZ_FRAMES;
+  o.fx.rings.push({ x: b.x, y: b.y, r: 8, grow: 4.2, life: 18, c: [210, 245, 255], w: 5 });
+  iceShards(o.fx, b.x, b.y, 18, 7, 24);
+  o.fx.shake = Math.max(o.fx.shake, 3);
+  if (!was) addPopup(o.i, b.x, b.y - 30, 'FROZEN!', 'rgb(120,215,255)');
+  beep(1568, 0.07, 'triangle', 0.1); beep(2093, 0.12, 'sine', 0.07); beep(330, 0.18, 'sawtooth', 0.04);
+}
+
 // ===== Duell-Logik =====
 function ballHit(sd, b, lead, y1, budget) {
   const sp = sd.spec;
@@ -260,6 +279,7 @@ function ballHit(sd, b, lead, y1, budget) {
   if (budget.snd > 0) { hitSound(sd, n); budget.snd--; }
   if (sp.onHit) { sp.onHit(sd, b, n); b.y = y1 - b.r; }
   if (sp.key === 'orbital') addSat(sd);
+  if (sp.key === 'freeze') { const o = S[1 - sd.i]; if (o && o.fin < 0 && !isDepleted(o.bars)) freezeSide(o); }
   if (sp.key === 'split' && sd.clones.length + 1 < SPLIT_MAX && sd.splitTimer >= SPLIT_GAP) {
     sd.splitTimer = 0;
     sd.clones.push({ x: b.x, y: b.y, vx: (-b.vx) || BALL_SPEED, vy: -BOUNCE_VY * (0.5 + 0.5 * sd.rnd()), r: b.r, dt: 1, squash: 1, trail: [] });
@@ -275,6 +295,13 @@ function stepSide(sd) {
   const g = G[sd.i], sp = sd.spec;
   const floor = g.arenaY1 + activeBar(sd.bars) * BAR_H;
   const x0 = 12, x1 = W - 12, y0 = g.arenaY0 + 10, y1 = floor - 10;
+  if (sd.frozen > 0) {
+    sd.frozen--; sd.fx.clock += 0.02;
+    for (const bb of [sd.ball, ...sd.clones]) bb.dt = 0.01;
+    if (Math.random() < 0.35) pushPart(sd.fx, { type: 'dot', x: sd.ball.x + (Math.random() - 0.5) * 50, y: sd.ball.y + 10 + Math.random() * 20, vx: (Math.random() - 0.5) * 0.4, vy: -0.3 - Math.random() * 0.5, g: -0.01, drag: 0.98, r: 1 + Math.random() * 1.4, age: 0, life: 24 + Math.random() * 14, c: [220, 245, 255] });
+    if (sd.frozen === 0) { iceShards(sd.fx, sd.ball.x, sd.ball.y, 24, 6, 28); sd.fx.rings.push({ x: sd.ball.x, y: sd.ball.y, r: 6, grow: 3.4, life: 14, c: [255, 255, 255], w: 3 }); beep(1200, 0.05, 'square', 0.05); beep(1800, 0.06, 'triangle', 0.06); }
+    return;
+  }
   const budget = { fx: 3, snd: 1 };
   if (sp.key === 'split') sd.splitTimer++;
   const balls = [sd.ball, ...sd.clones];
@@ -579,6 +606,10 @@ function drawTypeFx(sd, b) {
     ctx.lineCap = 'butt';
     if (sd.lzHit) { const g2 = ctx.createRadialGradient(tx, ty - 10, 1, tx, ty - 10, 26); g2.addColorStop(0, rgba(sp.hot, 0.9)); g2.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(tx, ty - 10, 26, 0, 6.29); ctx.fill(); }
     const gl = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, b.r * 2); gl.addColorStop(0, rgba(sp.hot, 0.5)); gl.addColorStop(1, rgba(sp.hot, 0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2, 0, 6.29); ctx.fill();
+  } else if (k === 'freeze') {
+    const pulse = 0.5 + 0.5 * Math.sin(clock * 2), gr = b.r * (2 + 0.4 * pulse), g3 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
+    g3.addColorStop(0, rgba(sp.hot, 0.45)); g3.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(clock * 0.9); ctx.strokeStyle = rgba(sp.hot, 0.8); ctx.lineWidth = 1.6; for (let i = 0; i < 6; i++) { ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(b.r + 4, 0); ctx.lineTo(b.r + 11, 0); ctx.stroke(); } ctx.restore();
   } else if (k === 'rocket') {
     const pr = Math.min(1, sd.rkT / RK_GAP), gr = b.r * (1.7 + pr);
     const gg = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr); gg.addColorStop(0, rgba(sp.hot, 0.15 + 0.4 * pr)); gg.addColorStop(1, rgba(sp.hot, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
@@ -587,12 +618,27 @@ function drawTypeFx(sd, b) {
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + 2 * Math.sin(clock * 3), 0, 6.29); ctx.strokeStyle = rgba(sp.light, 0.6); ctx.lineWidth = 1.5; ctx.stroke();
   }
 }
+function drawIce(sd) {
+  if (!(sd.frozen > 0)) return;
+  const ball = sd.ball, f = sd.frozen, fm = sd.frozenMax;
+  const born = Math.min(1, (fm - f) / 6), shaky = f < 9 ? (Math.random() - 0.5) * 2.2 : 0, R = ball.r * 2.1 * (0.55 + 0.45 * born);
+  ctx.save(); ctx.translate(ball.x + shaky, ball.y);
+  const g = ctx.createRadialGradient(0, 0, ball.r * 0.5, 0, 0, ball.r * 3); g.addColorStop(0, 'rgba(150,228,255,0.55)'); g.addColorStop(1, 'rgba(150,228,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, ball.r * 3, 0, 6.29); ctx.fill();
+  const pts = []; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + 0.2, rr = R * (i % 2 ? 1.28 : 1.12); pts.push([Math.cos(a) * rr, Math.sin(a) * rr]); }
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < 8; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath();
+  const ig = ctx.createLinearGradient(-R, -R, R, R); ig.addColorStop(0, 'rgba(235,252,255,0.78)'); ig.addColorStop(0.5, 'rgba(120,205,255,0.55)'); ig.addColorStop(1, 'rgba(60,150,230,0.7)');
+  ctx.fillStyle = ig; ctx.fill(); ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.beginPath(); for (let i = 0; i < 8; i += 2) { ctx.moveTo(0, 0); ctx.lineTo(pts[i][0], pts[i][1]); } ctx.stroke();
+  ctx.restore();
+}
 function drawParticles(fx, confettiPass) {
   for (const p of fx.parts) {
     const isConf = p.type === 'confetti'; if (isConf !== confettiPass) continue;
     const a = Math.max(0, 1 - p.age / p.life);
     if (p.type === 'spark') { ctx.strokeStyle = rgba(p.c, a); ctx.lineWidth = p.r; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.2, p.y - p.vy * 2.2); ctx.stroke(); }
     else if (p.type === 'bolt') { ctx.strokeStyle = rgba(p.c, a); ctx.lineWidth = p.r * a + 0.4; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(p.pts[0][0], p.pts[0][1]); for (let k = 1; k < p.pts.length; k++) ctx.lineTo(p.pts[k][0], p.pts[k][1]); ctx.stroke(); }
+    else if (p.type === 'shard') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = rgba(p.c, a); ctx.beginPath(); ctx.moveTo(0, -p.r * 1.6); ctx.lineTo(p.r * 0.8, 0); ctx.lineTo(0, p.r * 1.6); ctx.lineTo(-p.r * 0.8, 0); ctx.closePath(); ctx.fill(); ctx.restore(); }
     else if (p.type === 'dot') { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.29); ctx.fillStyle = rgba(p.c, a); ctx.fill(); }
     else { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = rgba(p.c, Math.min(1, a * 1.6)); ctx.fillRect(-p.r, -p.r * 0.55, p.r * 2, p.r * 1.1); ctx.restore(); }
   }
@@ -619,7 +665,8 @@ function drawSide(sd, stageText) {
   for (const r of (sd.rockets || [])) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.ang + 1.5708); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(0, -11); ctx.quadraticCurveTo(5, -4, 4, 6); ctx.lineTo(-4, 6); ctx.quadraticCurveTo(-5, -4, 0, -11); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = rgba(sp.rgb, 1); ctx.beginPath(); ctx.moveTo(0, -11); ctx.quadraticCurveTo(3, -7, 3.4, -4); ctx.lineTo(-3.4, -4); ctx.quadraticCurveTo(-3, -7, 0, -11); ctx.fill(); ctx.beginPath(); ctx.moveTo(-4, 1); ctx.lineTo(-8, 9); ctx.lineTo(-3, 5); ctx.moveTo(4, 1); ctx.lineTo(8, 9); ctx.lineTo(3, 5); ctx.fillStyle = rgba(sp.rgb, 1); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#ffb030'; ctx.beginPath(); ctx.moveTo(-2.4, 6.5); ctx.lineTo(0, 15 + Math.random() * 5); ctx.lineTo(2.4, 6.5); ctx.fill(); ctx.restore(); }
   const won = duel && duel.over && duel.winner === sd.i;
   if (!isDepleted(sd.bars) || won) {
-    for (const b of [sd.ball, ...sd.clones]) { drawTrail(b, sp); drawAura(b, sp, progressOf(sd.total)); drawTypeFx(sd, b); drawBallBody(b, sp); }
+    for (const b of [sd.ball, ...sd.clones]) { drawTrail(b, sp); drawAura(b, sp, progressOf(sd.total)); if (!(sd.frozen > 0)) drawTypeFx(sd, b); drawBallBody(b, sp); }
+    drawIce(sd);
   }
   for (const p of popups) {
     if (p.i !== sd.i) continue;
@@ -660,9 +707,9 @@ const MATCHES = [];
   for (let l = 0; l < 4; l++) { const n = 16 >> (l + 1); for (let i = 0; i < n; i++) MATCHES.push({ l, a: 2 * i, b: 2 * i + 1, o: i, name: l === 3 ? 'FINAL' : names[l] + '  ' + (i + 1) + '/' + n }); }
 })();
 const OUT_LVL = MATCHES.map(M => M.l + 1);
-const CAL = [[1,1,1,2],[1721870000,228.034,12,102],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
-const M0 = 1, SINGLE = true;
-const PRE = ["split"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1995260,246604000,13,103],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
+const M0 = 2, SINGLE = true;
+const PRE = ["split","laser"];   // Sieger bereits gespielter Duelle
 const ROW_Y = [[130, 225, 318, 405], [814, 719, 626, 539]];
 function slotPos(l, i) {
   if (l === 4) return { x: W / 2, y: 472 };
