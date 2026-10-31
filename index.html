@@ -529,9 +529,9 @@ const MATCHES = [
   { l: 2, a: 0, b: 1, o: 0, name: 'FINAL' },
 ];
 const OUT_LVL = [1, 1, 1, 1, 2, 2, 3];
-const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[4634.47,0.625173,16,106],[1,1,1,2]];
-const M0 = 5, SINGLE = true;
-const PRE = ["fib","split","speed","fact","fib"];   // Sieger bereits gespielter Duelle
+const CAL = [[1, 1, 1, 2], [1, 1, 1, 2], [1, 1, 1, 2], [1, 1, 1, 2], [1, 1, 1, 2], [1, 1, 1, 2], [10, 0.625173, 17, 107]];
+const M0 = 6, SINGLE = true;
+const PRE = ["fib","split","speed","fact","fib","fact"];   // Sieger bereits gespielter Duelle
 function slotPos(l, i) {
   if (l === 3) return { x: W / 2, y: LVL_Y[3] };
   const n = 8 >> l, step = W / n;
