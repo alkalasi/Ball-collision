@@ -80,7 +80,7 @@ const GROW_R0 = 14, GROW_RK = 3.0, GROW_RMAX = 170, GROW_CEIL_R = 48;
 const ORB_R = 40, ORB_SR = 6, ORB_W = 0.075, ORB_F = 0.25, ORB_MAX = 14;
 const SPLIT_GAP = 150, SPLIT_MAX = 16;
 const RK_GAP = 80, RK_FLIGHT = 30, RK_F = 40;
-const LZ_F = 2, FRZ_FRAMES = 36;
+const LZ_F = 2, FRZ_FRAMES = 36, BOMB_F = 30;
 function lzSec(sd) { return sd.lzT / 60; }
 function lzLen(sd) { return Math.min(430, 90 + 5 * lzSec(sd)); }
 function lzW(sd) { return Math.min(0.28, 0.06 + 0.002 * lzSec(sd)); }
@@ -126,6 +126,7 @@ SPECS.vampire = mkSpec('vampire', 'VAMPIRE BALL', 'FANG', [150, 18, 85], [235, 1
 SPECS.lightning = mkSpec('lightning', 'LIGHTNING BALL', 'ZAP', [38, 44, 96], [120, 130, 220], [8, 10, 40], [190, 200, 255], [255, 235, 70]);
 SPECS.sticky = mkSpec('sticky', 'STICKY BALL', 'GLUE', [162, 106, 46], [235, 190, 120], [80, 44, 8], [255, 225, 175], [140, 230, 60]);
 SPECS.bomb = mkSpec('bomb', 'BOMB BALL', 'BOMB', [64, 70, 78], [150, 158, 170], [14, 16, 20], [220, 225, 235], [255, 150, 30]);
+SPECS.bomb.info = sd => 'BOOM IN: ' + (3 - (sd.hits % 3)) + ' HITS';
 
 // ===== Zustand eines Duells =====
 let S = [null, null];          // S[0] oben, S[1] unten
@@ -286,6 +287,21 @@ function ballHit(sd, b, lead, y1, budget) {
     sd.fx.rings.push({ x: b.x, y: b.y, r: 4, grow: 2.4, life: 16, c: sp.acc, w: 3, round: true });
     for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28, v = 1.5 + Math.random() * 2.5; pushPart(sd.fx, { type: 'dot', x: b.x, y: b.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 0, drag: 0.95, r: 1.6, age: 0, life: 24, c: sp.acc }); }
     beep(900, 0.08, 'square', 0.06);
+  }
+  if (sp.key === 'bomb' && n % 3 === 0) {
+    const bd = Math.round(BOMB_F * Math.pow(n / 3, 3) * sd.C);
+    sd.total += bd;
+    addPopup(sd.i, b.x, b.y - b.r - 26, 'BOOM -' + formatNum(bd), rgba(sp.acc, 1));
+    const fx = sd.fx, fy2 = b.y + b.r;
+    fx.rings.push({ x: b.x, y: b.y, r: 8, grow: 9, life: 26, c: sp.acc, w: 7, round: true });
+    fx.rings.push({ x: b.x, y: b.y, r: 4, grow: 14, life: 18, c: [255, 255, 255], w: 5, round: true });
+    fx.rings.push({ x: b.x, y: fy2, r: 6, grow: 9, life: 24, c: sp.hot, w: 5, flat: true });
+    for (let q = 0; q < 46; q++) { const a = Math.random() * 6.283, vv = 2 + Math.random() * 9; pushPart(fx, { type: 'spark', x: b.x, y: b.y, vx: Math.cos(a) * vv, vy: Math.sin(a) * vv, g: 0.12, drag: 0.982, r: 1.4 + Math.random() * 2, age: 0, life: 22 + Math.random() * 20, c: [[255, 220, 90], [255, 140, 30], [255, 80, 20]][q % 3] }); }
+    for (let q = 0; q < 16; q++) { const a = Math.random() * 6.283, vv = 0.5 + Math.random() * 2.5; pushPart(fx, { type: 'dot', x: b.x, y: b.y, vx: Math.cos(a) * vv, vy: Math.sin(a) * vv - 0.3, g: -0.01, drag: 0.96, r: 3 + Math.random() * 5, age: 0, life: 30 + Math.random() * 20, c: [70, 70, 76] }); }
+    fx.flash = 1; fx.shake = Math.max(fx.shake, 15);
+    beep(55, 0.5, 'sine', 0.35); beep(150, 0.25, 'sawtooth', 0.09); beep(900, 0.08, 'square', 0.05);
+    dealDamage(sd, bd);
+    if (sd.fin >= 0) return;
   }
   dealDamage(sd, dmg);
 }
@@ -606,6 +622,13 @@ function drawTypeFx(sd, b) {
     ctx.lineCap = 'butt';
     if (sd.lzHit) { const g2 = ctx.createRadialGradient(tx, ty - 10, 1, tx, ty - 10, 26); g2.addColorStop(0, rgba(sp.hot, 0.9)); g2.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(tx, ty - 10, 26, 0, 6.29); ctx.fill(); }
     const gl = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, b.r * 2); gl.addColorStop(0, rgba(sp.hot, 0.5)); gl.addColorStop(1, rgba(sp.hot, 0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2, 0, 6.29); ctx.fill();
+  } else if (k === 'bomb') {
+    const c3 = sd.hits % 3, heat = c3 / 3, gr = b.r * (1.6 + 0.8 * heat), g4 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
+    g4.addColorStop(0, rgba(sp.acc, 0.15 + 0.4 * heat)); g4.addColorStop(1, rgba(sp.acc, 0)); ctx.fillStyle = g4; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
+    const fxp = b.x + b.r * 0.55, fyp = b.y - b.r * 1.05;
+    ctx.strokeStyle = '#d8c8a0'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x + b.r * 0.2, b.y - b.r * 0.9); ctx.quadraticCurveTo(b.x + b.r * 0.5, b.y - b.r * 1.3, fxp, fyp); ctx.stroke(); ctx.lineCap = 'butt';
+    const fl = 3 + 3 * heat + 2 * Math.random(); ctx.fillStyle = rgba(sp.acc, 0.95); ctx.beginPath(); ctx.arc(fxp, fyp, fl, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fxp, fyp, fl * 0.45, 0, 6.29); ctx.fill();
+    for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + (i - 1) * 0.55 - Math.PI * 0 , px = b.x + Math.cos(a + Math.PI) * 0, py = 0; const ax = b.x + (i - 1) * 9, ay = b.y + b.r + 8; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 6.29); ctx.fillStyle = i < c3 ? rgba(sp.acc, 1) : 'rgba(60,60,60,0.35)'; ctx.fill(); }
   } else if (k === 'freeze') {
     const pulse = 0.5 + 0.5 * Math.sin(clock * 2), gr = b.r * (2 + 0.4 * pulse), g3 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
     g3.addColorStop(0, rgba(sp.hot, 0.45)); g3.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
@@ -707,9 +730,9 @@ const MATCHES = [];
   for (let l = 0; l < 4; l++) { const n = 16 >> (l + 1); for (let i = 0; i < n; i++) MATCHES.push({ l, a: 2 * i, b: 2 * i + 1, o: i, name: l === 3 ? 'FINAL' : names[l] + '  ' + (i + 1) + '/' + n }); }
 })();
 const OUT_LVL = MATCHES.map(M => M.l + 1);
-const CAL = [[1,1,1,2],[1,1,1,2],[1995260,246604000,13,103],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
-const M0 = 2, SINGLE = true;
-const PRE = ["split","laser"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[591562000,5152.29,14,104],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
+const M0 = 3, SINGLE = true;
+const PRE = ["split","laser","freeze"];   // Sieger bereits gespielter Duelle
 const ROW_Y = [[130, 225, 318, 405], [814, 719, 626, 539]];
 function slotPos(l, i) {
   if (l === 4) return { x: W / 2, y: 472 };
