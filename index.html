@@ -80,7 +80,7 @@ const GROW_R0 = 14, GROW_RK = 3.0, GROW_RMAX = 170, GROW_CEIL_R = 48;
 const ORB_R = 40, ORB_SR = 6, ORB_W = 0.075, ORB_F = 0.25, ORB_MAX = 14;
 const SPLIT_GAP = 150, SPLIT_MAX = 16;
 const RK_GAP = 80, RK_FLIGHT = 30, RK_F = 40;
-const LZ_F = 2, FRZ_FRAMES = 36, BOMB_F = 30;
+const LZ_F = 2, FRZ_FRAMES = 36, BOMB_F = 30, DRL_F = 0.4, DRL_SPD = 6.5, STK_F = 1;
 function lzSec(sd) { return sd.lzT / 60; }
 function lzLen(sd) { return Math.min(430, 90 + 5 * lzSec(sd)); }
 function lzW(sd) { return Math.min(0.28, 0.06 + 0.002 * lzSec(sd)); }
@@ -122,9 +122,12 @@ SPECS.laser.info = sd => 'BEAM: ' + lzLen(sd).toFixed(0) + ' px';
 SPECS.golden = mkSpec('golden', 'GOLDEN RATIO BALL', 'φ', [214, 160, 20], [255, 225, 120], [110, 70, 0], [255, 240, 180], [255, 255, 255]);
 SPECS.golden.dmg = n => Math.pow(PHI, n); SPECS.golden.dt = sd => 0.75; SPECS.golden.info = sd => 'NEXT: ' + formatNum(Math.pow(PHI, sd.hits + 1)) + 'x';
 SPECS.drill = mkSpec('drill', 'DRILL BALL', 'DRILL', [118, 126, 140], [200, 208, 222], [46, 52, 66], [235, 240, 250], [255, 150, 30]);
+SPECS.drill.dmg = n => n * n * n; SPECS.drill.dt = sd => 0.8; SPECS.drill.info = sd => 'DRILL: ' + formatNum(Math.round(SPECS.drill.dmg(sd.hits + 1) * sd.C * DRL_F));
 SPECS.vampire = mkSpec('vampire', 'VAMPIRE BALL', 'FANG', [150, 18, 85], [235, 110, 170], [60, 0, 32], [255, 190, 220], [255, 40, 60]);
 SPECS.lightning = mkSpec('lightning', 'LIGHTNING BALL', 'ZAP', [38, 44, 96], [120, 130, 220], [8, 10, 40], [190, 200, 255], [255, 235, 70]);
 SPECS.sticky = mkSpec('sticky', 'STICKY BALL', 'GLUE', [162, 106, 46], [235, 190, 120], [80, 44, 8], [255, 225, 175], [140, 230, 60]);
+SPECS.sticky.info = sd => sd.stk > 0 ? 'STUCK: ' + (sd.stk / 60).toFixed(1) + 's' : 'STICK: ' + (stkLen(sd.hits + 1) / 60).toFixed(1) + 's';
+function stkLen(n) { return Math.min(140, 20 + 5 * n); }
 SPECS.bomb = mkSpec('bomb', 'BOMB BALL', 'BOMB', [64, 70, 78], [150, 158, 170], [14, 16, 20], [220, 225, 235], [255, 150, 30]);
 SPECS.bomb.info = sd => 'BOOM IN: ' + (3 - (sd.hits % 3)) + ' HITS';
 
@@ -146,7 +149,7 @@ function newSide(i, key, C, seed) {
   const rn = () => { rs2 = (Math.imul(rs2, 1664525) + 1013904223) >>> 0; return rs2 / 4294967296; };
   const a = rn() * Math.PI * 2;
   const sd = {
-    rnd: rn, i, key, spec, C, hits: 0, total: 0, fx: makeFx(), bars: BAR_HEALTHS.slice(), clones: [], sats: [], splitTimer: 0, fin: -1, rkT: 0, rk: 0, rockets: [], frozen: 0, frozenMax: 1, lzT: 0, lzA: -1.2, lzHit: null, lzAcc: 0, lzN: 0,
+    rnd: rn, i, key, spec, C, hits: 0, total: 0, fx: makeFx(), bars: BAR_HEALTHS.slice(), clones: [], sats: [], splitTimer: 0, fin: -1, rkT: 0, rk: 0, rockets: [], frozen: 0, frozenMax: 1, drills: [], dSp: [], stk: 0, stkK: 0, stkAcc: 0, stkN: 0, lzT: 0, lzA: -1.2, lzHit: null, lzAcc: 0, lzN: 0,
     ball: { x: W / 2, y: G[i].arenaY0 + ARENA_H / 2, vx: Math.cos(a) * BALL_SPEED, vy: Math.sin(a) * BALL_SPEED, r: spec.r0, dt: 1, squash: 0, trail: [] },
   };
   if (key === 'orbital') addSat(sd, true);
@@ -280,6 +283,8 @@ function ballHit(sd, b, lead, y1, budget) {
   if (budget.snd > 0) { hitSound(sd, n); budget.snd--; }
   if (sp.onHit) { sp.onHit(sd, b, n); b.y = y1 - b.r; }
   if (sp.key === 'orbital') addSat(sd);
+  if (sp.key === 'drill') { sd.drills.push({ x: b.x, y: y1 + 10, d: Math.round(dmg * DRL_F), done: [false, false, false], rot: 0, age: 0 }); }
+  if (sp.key === 'sticky') { sd.stk = stkLen(n); sd.stkK = 0; b.vy = 0; b.vx = 0; sd.fx.rings.push({ x: b.x, y: b.y + b.r, r: 6, grow: 4, life: 20, c: sp.acc, w: 5 }); beep(140, 0.12, 'sine', 0.12); }
   if (sp.key === 'freeze') { const o = S[1 - sd.i]; if (o && o.fin < 0 && !isDepleted(o.bars)) freezeSide(o); }
   if (sp.key === 'split' && sd.clones.length + 1 < SPLIT_MAX && sd.splitTimer >= SPLIT_GAP) {
     sd.splitTimer = 0;
@@ -325,6 +330,24 @@ function stepSide(sd) {
     const b = balls[bi];
     const dt = sp.dt(sd) * TF * (TM[sp.key] || 1), gm = sp.gm ? sp.gm(sd) : 1;
     b.dt = dt;
+    if (sp.key === 'sticky' && sd.stk > 0) {
+      b.y = y1 - b.r; b.vy = 0; b.vx = 0; b.squash = 0.75;
+      sd.stk -= dt; sd.stkK += dt;
+      const sdm = Math.max(1, Math.round(STK_F * sd.C * sd.hits * (1 + sd.stkK / 20) * dt));
+      sd.total += sdm; sd.stkAcc += sdm; sd.stkN++;
+      if (sd.stkN % 16 === 0) { addPopup(sd.i, b.x, b.y - b.r - 8, '-' + formatNum(sd.stkAcc), rgba(sp.acc, 1)); sd.stkAcc = 0; }
+      if (sd.stkN % 3 === 0) pushPart(sd.fx, { type: 'dot', x: b.x + (Math.random() - 0.5) * b.r * 2, y: b.y + b.r - 2, vx: (Math.random() - 0.5) * 0.6, vy: -0.4 - Math.random() * 0.8, g: 0.02, drag: 0.97, r: 1.6 + Math.random() * 2, age: 0, life: 22 + Math.random() * 14, c: Math.random() < 0.5 ? sp.acc : sp.light });
+      if (sd.stkN % 8 === 0) beep(180 + Math.min(300, sd.stkK * 2), 0.06, 'sine', 0.05);
+      dealDamage(sd, sdm);
+      if (sd.fin >= 0) return;
+      if (sd.stk <= 0) {
+        b.vy = -BOUNCE_VY * 1.05; b.vx = (sd.rnd() < 0.5 ? -1 : 1) * BALL_SPEED;
+        sd.fx.rings.push({ x: b.x, y: b.y + b.r, r: 6, grow: 3.4, life: 18, c: sp.acc, w: 4 });
+        for (let q = 0; q < 12; q++) pushPart(sd.fx, { type: 'dot', x: b.x + (Math.random() - 0.5) * 24, y: b.y + b.r, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random() * 3, g: 0.2, drag: 0.98, r: 1.8 + Math.random() * 2.2, age: 0, life: 24 + Math.random() * 14, c: sp.acc });
+        beep(520, 0.08, 'triangle', 0.08);
+      }
+      continue;
+    }
     b.vy += GRAVITY * gm * dt;
     if (b.vy > MAX_FALL_SPEED) b.vy = MAX_FALL_SPEED;
     b.x += b.vx * dt; b.y += b.vy * dt;
@@ -370,6 +393,30 @@ function stepSide(sd) {
       if (sd.lzN % 6 === 0) beep(260 + Math.min(500, sec * 8), 0.05, 'sawtooth', 0.025);
       dealDamage(sd, ld);
       if (sd.fin >= 0) return;
+    }
+  }
+
+  if (k === 'drill') {
+    for (let di = sd.drills.length - 1; di >= 0; di--) {
+      const d = sd.drills[di];
+      d.age++; d.y += DRL_SPD * b.dt; d.rot += 0.9;
+      const act = activeBar(sd.bars), floorNow = g.arenaY1 + act * BAR_H;
+      for (let bi2 = 0; bi2 < 3; bi2++) {
+        if (d.done[bi2] || sd.bars[bi2] <= 0) continue;
+        const cy = floorNow + (bi2 - act) * BAR_H + BAR_H * 0.45;
+        if (d.y >= cy) {
+          d.done[bi2] = true;
+          const dd = Math.min(d.d, sd.bars[bi2]);
+          sd.total += dd;
+          if (bi2 === act) dealDamage(sd, d.d);
+          else { sd.bars[bi2] -= d.d; if (sd.bars[bi2] < 0) sd.bars[bi2] = 0; dealDamage(sd, 0); }
+          sd.dSp.push({ t: 'txt', x: d.x, y: cy, text: '-' + formatNum(d.d), age: 0, life: 40 });
+          for (let q = 0; q < 10; q++) { const a = Math.random() * 6.283, v = 1.5 + Math.random() * 4; sd.dSp.push({ t: 'sp', x: d.x, y: cy, vx: Math.cos(a) * v * 1.4, vy: Math.sin(a) * v - 1, age: 0, life: 14 + Math.random() * 14, c: q % 3 ? [255, 190, 70] : [255, 255, 230] }); }
+          beep(300 + bi2 * 120, 0.06, 'sawtooth', 0.06);
+          if (sd.fin >= 0) return;
+        }
+      }
+      if (d.y > g.arenaY1 + 3 * BAR_H + 30) sd.drills.splice(di, 1);
     }
   }
   if (k === 'rocket') {
@@ -439,6 +486,7 @@ function updateFx(sd) {
     const r = fx.rings[i]; r.age = (r.age || 0) + 1; r.r += r.grow;
     if (r.age > r.life || r.r < 0) fx.rings.splice(i, 1);
   }
+  for (let i = sd.dSp.length - 1; i >= 0; i--) { const p = sd.dSp[i]; p.age++; if (p.t === 'sp') { p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.vx *= 0.97; } else p.y -= 0.5; if (p.age > p.life) sd.dSp.splice(i, 1); }
   fx.flash = Math.max(0, fx.flash - 0.06);
   fx.shake = fx.shake < 0.05 ? 0 : fx.shake * 0.87;
   for (const b of [sd.ball, ...sd.clones]) {
@@ -629,6 +677,14 @@ function drawTypeFx(sd, b) {
     ctx.strokeStyle = '#d8c8a0'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x + b.r * 0.2, b.y - b.r * 0.9); ctx.quadraticCurveTo(b.x + b.r * 0.5, b.y - b.r * 1.3, fxp, fyp); ctx.stroke(); ctx.lineCap = 'butt';
     const fl = 3 + 3 * heat + 2 * Math.random(); ctx.fillStyle = rgba(sp.acc, 0.95); ctx.beginPath(); ctx.arc(fxp, fyp, fl, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fxp, fyp, fl * 0.45, 0, 6.29); ctx.fill();
     for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + (i - 1) * 0.55 - Math.PI * 0 , px = b.x + Math.cos(a + Math.PI) * 0, py = 0; const ax = b.x + (i - 1) * 9, ay = b.y + b.r + 8; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 6.29); ctx.fillStyle = i < c3 ? rgba(sp.acc, 1) : 'rgba(60,60,60,0.35)'; ctx.fill(); }
+  } else if (k === 'sticky') {
+    const stuck = sd.stk > 0, gr = b.r * 2, g5 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
+    g5.addColorStop(0, rgba(sp.acc, stuck ? 0.4 : 0.18)); g5.addColorStop(1, rgba(sp.acc, 0)); ctx.fillStyle = g5; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
+    if (stuck) {
+      const pw = Math.min(70, 22 + sd.stkK * 0.5) , py = b.y + b.r;
+      ctx.fillStyle = rgba(sp.acc, 0.9); ctx.strokeStyle = 'rgba(30,70,10,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(b.x, py - 1, pw, 7, 0, 0, 6.29); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.ellipse(b.x - pw * 0.3, py - 3, pw * 0.25, 2, 0, 0, 6.29); ctx.fill();
+    }
   } else if (k === 'freeze') {
     const pulse = 0.5 + 0.5 * Math.sin(clock * 2), gr = b.r * (2 + 0.4 * pulse), g3 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
     g3.addColorStop(0, rgba(sp.hot, 0.45)); g3.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
@@ -675,6 +731,32 @@ function drawRings(fx) {
     ctx.stroke();
   }
 }
+function drawDrillsSd(sd, floorY, active) {
+  const g = G[sd.i];
+  for (const d of sd.drills) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, floorY - 2, W, (3 - active) * BAR_H + 4); ctx.clip();
+    const fade = Math.max(0, 1 - d.age / 40);
+    ctx.strokeStyle = 'rgba(40,20,0,' + (0.7 * fade) + ')'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(d.x, floorY - 2); ctx.lineTo(d.x, d.y); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,170,50,' + (0.8 * fade) + ')'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(d.x - 3.5, floorY - 2); ctx.lineTo(d.x - 3.5, d.y); ctx.moveTo(d.x + 3.5, floorY - 2); ctx.lineTo(d.x + 3.5, d.y); ctx.stroke();
+    ctx.translate(d.x, d.y); ctx.scale(1.45, 1.45);
+    const gl = ctx.createRadialGradient(0, 0, 1, 0, 0, 20); gl.addColorStop(0, 'rgba(255,230,150,0.85)'); gl.addColorStop(1, 'rgba(255,128,12,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, 20, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-6.5, -9); ctx.lineTo(6.5, -9); ctx.lineTo(0, 10); ctx.closePath();
+    ctx.fillStyle = '#c8d0dc'; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,128,12,0.95)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { const yy = -5 + ((i * 6 + d.rot * 3) % 17), w = 5.5 * (1 - (yy + 9) / 19); ctx.beginPath(); ctx.moveTo(-w, yy + 1.5); ctx.lineTo(w, yy - 1.5); ctx.stroke(); }
+    ctx.restore();
+  }
+  for (const p of sd.dSp) {
+    const a = Math.max(0, 1 - p.age / p.life);
+    if (p.t === 'sp') { ctx.strokeStyle = rgba(p.c, a); ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2); ctx.stroke(); }
+    else { ctx.globalAlpha = a; ctx.font = '900 15px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.fillStyle = '#ffd36b'; ctx.strokeText(p.text, Math.max(50, Math.min(W - 50, p.x)), p.y); ctx.fillText(p.text, Math.max(50, Math.min(W - 50, p.x)), p.y); ctx.globalAlpha = 1; }
+  }
+  ctx.lineCap = 'butt';
+}
 function drawSide(sd, stageText) {
   const fx = sd.fx, sp = sd.spec, g = G[sd.i];
   ctx.save();
@@ -701,6 +783,7 @@ function drawSide(sd, stageText) {
   ctx.fillText('DAMAGE: ' + formatNum(Math.round(sp.dmg(sd.hits + 1) * sd.C)) + '  |  ' + sp.info(sd), 12, g.arenaY0 + 15);
   ctx.restore();
   for (let i = active; i < sd.bars.length; i++) { const y0 = floorY + (i - active) * BAR_H; drawHealthBar(y0, y0 + BAR_H, sp, sd.bars[i], i === active); }
+  if (sd.drills.length || sd.dSp.length) drawDrillsSd(sd, floorY, active);
   drawChecker(g.checkerY0, g.checkerY1);
   if (won) {
     const y0 = g.arenaY0, y1 = g.checkerY0;
@@ -730,9 +813,9 @@ const MATCHES = [];
   for (let l = 0; l < 4; l++) { const n = 16 >> (l + 1); for (let i = 0; i < n; i++) MATCHES.push({ l, a: 2 * i, b: 2 * i + 1, o: i, name: l === 3 ? 'FINAL' : names[l] + '  ' + (i + 1) + '/' + n }); }
 })();
 const OUT_LVL = MATCHES.map(M => M.l + 1);
-const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[937.562,679204,15,105],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
-const M0 = 4, SINGLE = true;
-const PRE = ["split","laser","freeze","speed"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[107647000,6426880000,16,106],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
+const M0 = 5, SINGLE = true;
+const PRE = ["split","laser","freeze","speed","grow"];   // Sieger bereits gespielter Duelle
 const ROW_Y = [[130, 225, 318, 405], [814, 719, 626, 539]];
 function slotPos(l, i) {
   if (l === 4) return { x: W / 2, y: 472 };
