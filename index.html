@@ -80,7 +80,7 @@ const GROW_R0 = 14, GROW_RK = 3.0, GROW_RMAX = 170, GROW_CEIL_R = 48;
 const ORB_R = 40, ORB_SR = 6, ORB_W = 0.075, ORB_F = 0.25, ORB_MAX = 14;
 const SPLIT_GAP = 150, SPLIT_MAX = 16;
 const RK_GAP = 80, RK_FLIGHT = 30, RK_F = 40;
-const LZ_F = 2, FRZ_FRAMES = 36, BOMB_F = 30, DRL_F = 0.4, DRL_SPD = 6.5, STK_F = 1, INF_BURN = 0.6, INF_TICK = 0.04, LT_F = 0.5;
+const LZ_F = 2, FRZ_FRAMES = 36, BOMB_F = 30, DRL_F = 0.4, DRL_SPD = 6.5, STK_F = 1, INF_BURN = 0.6, INF_TICK = 0.04, LT_F = 0.5, VAMP_H = 0.5;
 function lzSec(sd) { return sd.lzT / 60; }
 function lzLen(sd) { return Math.min(430, 90 + 5 * lzSec(sd)); }
 function lzW(sd) { return Math.min(0.28, 0.06 + 0.002 * lzSec(sd)); }
@@ -125,6 +125,7 @@ SPECS.golden.dmg = n => Math.pow(PHI, n); SPECS.golden.dt = sd => 0.75; SPECS.go
 SPECS.drill = mkSpec('drill', 'DRILL BALL', 'DRILL', [118, 126, 140], [200, 208, 222], [46, 52, 66], [235, 240, 250], [255, 150, 30]);
 SPECS.drill.dmg = n => n * n * n; SPECS.drill.dt = sd => 0.8; SPECS.drill.info = sd => 'DRILL: ' + formatNum(Math.round(SPECS.drill.dmg(sd.hits + 1) * sd.C * DRL_F));
 SPECS.vampire = mkSpec('vampire', 'VAMPIRE BALL', 'FANG', [150, 18, 85], [235, 110, 170], [60, 0, 32], [255, 190, 220], [255, 40, 60]);
+SPECS.vampire.dmg = n => n * n * n; SPECS.vampire.dt = sd => 0.8; SPECS.vampire.info = sd => 'HEAL RIVAL: ' + formatNum(Math.round(SPECS.vampire.dmg(sd.hits + 1) * sd.C * VAMP_H));
 SPECS.lightning = mkSpec('lightning', 'LIGHTNING BALL', 'ZAP', [38, 44, 96], [120, 130, 220], [8, 10, 40], [190, 200, 255], [255, 235, 70]);
 SPECS.lightning.info = sd => 'BOLTS: ' + sd.hits;
 SPECS.sticky = mkSpec('sticky', 'STICKY BALL', 'GLUE', [162, 106, 46], [235, 190, 120], [80, 44, 8], [255, 225, 175], [140, 230, 60]);
@@ -238,6 +239,8 @@ function impactFx(sd, b, n) {
       sparks(fx, b.x, fy, 26, 3, 10, [sp.acc, sp.rgb, sp.hot]); fx.shake = Math.max(fx.shake, 6); break;
     case 'orbital':
       sparks(fx, b.x, fy, 14, 2, 7, [sp.hot, sp.rgb]); fx.shake = Math.max(fx.shake, 2.4); break;
+    case 'vampire':
+      sparks(fx, b.x, fy, 12, 2, 6, [sp.rgb, sp.acc, sp.light]); fx.shake = Math.max(fx.shake, 2.4); break;
     case 'freeze':
       sparks(fx, b.x, fy, 12, 2, 6, [sp.hot, sp.rgb, [255, 255, 255]]); iceShards(fx, b.x, fy, 6, 4, 20); fx.shake = Math.max(fx.shake, 2.4); break;
     case 'laser':
@@ -335,6 +338,20 @@ function ballHit(sd, b, lead, y1, budget) {
     if (sd.fin >= 0) return;
   }
   if (sp.key === 'inferno') sd.burn += dmg * INF_BURN;
+  if (sp.key === 'vampire') {
+    const o = S[1 - sd.i];
+    if (o && o.fin < 0 && !isDepleted(o.bars)) {
+      const ab = activeBar(o.bars), h = Math.round(dmg * VAMP_H), room = BAR_HEALTHS[ab] - o.bars[ab], hh = Math.min(h, room);
+      if (hh > 0) {
+        o.bars[ab] += hh; o.total = Math.max(0, o.total - hh);
+        addPopup(o.i, o.ball.x, o.ball.y - 20, '+' + formatNum(hh) + ' HEALED', 'rgb(255,70,90)');
+        o.fx.rings.push({ x: W / 2, y: G[o.i].arenaY1 + ab * BAR_H, r: 8, grow: 6, life: 18, c: sp.acc, w: 4, flat: true });
+        for (let q = 0; q < 8; q++) pushPart(o.fx, { type: 'dot', x: 20 + Math.random() * (W - 40), y: G[o.i].arenaY1 + ab * BAR_H - 2, vx: (Math.random() - 0.5) * 0.6, vy: -1 - Math.random() * 1.6, g: 0.01, drag: 0.98, r: 1.8 + Math.random() * 1.8, age: 0, life: 24 + Math.random() * 14, c: sp.acc });
+      }
+      beep(220, 0.14, 'sawtooth', 0.07); beep(110, 0.2, 'sine', 0.1);
+    }
+  }
+
   dealDamage(sd, dmg);
 }
 
@@ -737,6 +754,10 @@ function drawTypeFx(sd, b) {
     const pulse = 0.5 + 0.5 * Math.sin(clock * 3), gr = b.r * (2 + 0.5 * pulse), g7 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
     g7.addColorStop(0, rgba(sp.acc, 0.35)); g7.addColorStop(1, rgba(sp.acc, 0)); ctx.fillStyle = g7; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
     if (Math.random() < 0.35) { const pts = boltPoints(b.x, b.y, Math.random() * 6.283, b.r * 2); ctx.strokeStyle = rgba(sp.acc, 0.9); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let q = 1; q < pts.length; q++) ctx.lineTo(pts[q][0], pts[q][1]); ctx.stroke(); }
+  } else if (k === 'vampire') {
+    const pulse = 0.5 + 0.5 * Math.sin(clock * 2.4), gr = b.r * (2.1 + 0.5 * pulse), g8 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
+    g8.addColorStop(0, rgba(sp.acc, 0.4)); g8.addColorStop(0.6, rgba(sp.rgb, 0.25)); g8.addColorStop(1, rgba(sp.rgb, 0)); ctx.fillStyle = g8; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
+    for (let i = 0; i < 2; i++) { const a = clock * 2 + i * 3.1416, rx = b.x + Math.cos(a) * (b.r + 9), ry = b.y + Math.sin(a) * (b.r + 9) * 0.8; ctx.fillStyle = rgba(sp.acc, 0.95); ctx.beginPath(); ctx.moveTo(rx, ry - 4); ctx.quadraticCurveTo(rx + 3.4, ry + 1, rx, ry + 3.4); ctx.quadraticCurveTo(rx - 3.4, ry + 1, rx, ry - 4); ctx.fill(); }
   } else if (k === 'sticky') {
     const stuck = sd.stk > 0, gr = b.r * 2, g5 = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, gr);
     g5.addColorStop(0, rgba(sp.acc, stuck ? 0.4 : 0.18)); g5.addColorStop(1, rgba(sp.acc, 0)); ctx.fillStyle = g5; ctx.beginPath(); ctx.arc(b.x, b.y, gr, 0, 6.29); ctx.fill();
@@ -896,9 +917,9 @@ const MATCHES = [];
   for (let l = 0; l < 4; l++) { const n = 16 >> (l + 1); for (let i = 0; i < n; i++) MATCHES.push({ l, a: 2 * i, b: 2 * i + 1, o: i, name: l === 3 ? 'FINAL' : names[l] + '  ' + (i + 1) + '/' + n }); }
 })();
 const OUT_LVL = MATCHES.map(M => M.l + 1);
-const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[113763000,8090960000,17,107],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
-const M0 = 6, SINGLE = true;
-const PRE = ["split","laser","freeze","speed","grow","drill"];   // Sieger bereits gespielter Duelle
+const CAL = [[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[145211000,208930000,18,108],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2],[1,1,1,2]];
+const M0 = 7, SINGLE = true;
+const PRE = ["split","laser","freeze","speed","grow","drill","lightning"];   // Sieger bereits gespielter Duelle
 const ROW_Y = [[130, 225, 318, 405], [814, 719, 626, 539]];
 function slotPos(l, i) {
   if (l === 4) return { x: W / 2, y: 472 };
